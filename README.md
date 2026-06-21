@@ -38,18 +38,6 @@ lrm-is-project/
   .gitignore
   README.md
 ```
-
-## My Module
-
-Student 2 is responsible for:
-
-- Creating applicant profiles
-- Submitting land applications
-- Uploading document metadata
-- Adding comments
-- Submitting objections
-- Viewing application timelines
-
 ## MongoDB Setup
 
 Use a local MongoDB instance.
@@ -104,14 +92,4 @@ The frontend expects the API at `http://localhost:8000` by default. You can chan
 - `POST /applications/{application_id}/comments`
 - `POST /applications/{application_id}/objections`
 - `GET /applications/{application_id}/timeline`
-
-## What Other Partners Should Implement Later
-
-- Student 1: workflow and state transitions for applications
-- Student 3: any remaining non-applicant modules for the full project presentation
-
-## Notes
-
-- No authentication is included.
-- The applicant ID can be entered manually in the frontend.
 - Document upload is metadata-only for this starter.
