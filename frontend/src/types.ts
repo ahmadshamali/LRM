@@ -156,3 +156,59 @@ export interface AutoAssignResponse {
   assigned_surveyor: StaffMember;
   survey_task: SurveyTask;
 }
+
+export interface AnalyticsKpis {
+  total_applications: number;
+  pending_applications: number;
+  approved_applications: number;
+  rejected_applications: number;
+  under_objection_applications: number;
+  certificates_issued: number;
+  average_processing_days: number | null;
+}
+
+export interface StatusCount {
+  status: string;
+  count: number;
+}
+
+export interface TypeCount {
+  application_type: string;
+  count: number;
+}
+
+export interface ZoneCount {
+  zone_id: string;
+  count: number;
+}
+
+export interface ProcessingTimeRecord {
+  application_type: string;
+  average_processing_days: number;
+  count: number;
+}
+
+export interface SurveyorAnalytics {
+  staff_id: string;
+  staff_code?: string | null;
+  name?: string | null;
+  active_tasks: number;
+  completed_tasks: number;
+  total_tasks: number;
+}
+
+export interface RegistrarAnalytics {
+  registrar_id: string;
+  workload_count: number;
+}
+
+export interface GeoJsonFeature {
+  type: 'Feature';
+  geometry: Record<string, unknown>;
+  properties: Record<string, unknown>;
+}
+
+export interface GeoJsonFeatureCollection {
+  type: 'FeatureCollection';
+  features: GeoJsonFeature[];
+}

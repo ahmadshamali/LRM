@@ -10,18 +10,23 @@ import {
   getApplication,
   getApplicant,
   getTimeline,
+  getStaff,
   listApplications,
+  listSharedApplications,
   listStaff,
   listSurveyTasks,
   registrarReview,
   updateSurveyMilestone,
   uploadSurveyReport,
 } from './api';
+import AnalyticsPage from './AnalyticsPage';
 import type { ApplicationType, ApplicantType, RegistrarDecision, StaffRole, SurveyMilestone } from './types';
 
 type TabKey =
+  | 'dashboard'
   | 'create-applicant'
   | 'submit-application'
+  | 'all-applications'
   | 'my-applications'
   | 'track-application'
   | 'upload-document'
@@ -30,28 +35,34 @@ type TabKey =
   | 'timeline'
   | 'create-staff'
   | 'staff-list'
+  | 'staff-detail'
   | 'auto-assign'
   | 'survey-tasks'
   | 'survey-milestone'
   | 'survey-report'
-  | 'registrar-review';
+  | 'registrar-review'
+  | 'analytics-map';
 
 const tabs: { key: TabKey; label: string; group: string }[] = [
+  { key: 'dashboard', label: 'Dashboard', group: 'Home' },
   { key: 'create-applicant', label: 'Create Applicant', group: 'Applicant' },
   { key: 'submit-application', label: 'Submit Application', group: 'Applicant' },
+  { key: 'all-applications', label: 'All Applications', group: 'Applicant' },
   { key: 'my-applications', label: 'My Applications', group: 'Applicant' },
   { key: 'track-application', label: 'Track Application', group: 'Applicant' },
   { key: 'upload-document', label: 'Upload Document Metadata', group: 'Applicant' },
   { key: 'add-comment', label: 'Add Comment', group: 'Applicant' },
   { key: 'submit-objection', label: 'Submit Objection', group: 'Applicant' },
   { key: 'timeline', label: 'Timeline', group: 'Applicant' },
-  { key: 'create-staff', label: 'Create Staff', group: 'Student 3' },
-  { key: 'staff-list', label: 'Staff List', group: 'Student 3' },
-  { key: 'auto-assign', label: 'Auto Assign Surveyor', group: 'Student 3' },
-  { key: 'survey-tasks', label: 'Survey Tasks', group: 'Student 3' },
-  { key: 'survey-milestone', label: 'Survey Milestone', group: 'Student 3' },
-  { key: 'survey-report', label: 'Survey Report', group: 'Student 3' },
-  { key: 'registrar-review', label: 'Registrar Review', group: 'Student 3' },
+  { key: 'create-staff', label: 'Create Staff', group: 'Staff Operations' },
+  { key: 'staff-list', label: 'Staff List', group: 'Staff Operations' },
+  { key: 'staff-detail', label: 'Staff Detail', group: 'Staff Operations' },
+  { key: 'auto-assign', label: 'Auto Assign Surveyor', group: 'Staff Operations' },
+  { key: 'survey-tasks', label: 'Survey Tasks', group: 'Staff Operations' },
+  { key: 'survey-milestone', label: 'Survey Milestone', group: 'Staff Operations' },
+  { key: 'survey-report', label: 'Survey Report', group: 'Staff Operations' },
+  { key: 'registrar-review', label: 'Registrar Review', group: 'Staff Operations' },
+  { key: 'analytics-map', label: 'Analytics and Map', group: 'Analytics & Maps' },
 ];
 
 const applicantTypes: ApplicantType[] = ['citizen', 'lawyer', 'company', 'surveyor', 'authorized_representative'];
@@ -87,9 +98,106 @@ function splitCsv(value: string): string[] {
     .filter(Boolean);
 }
 
+const dashboardGroups: Array<{
+  title: string;
+  tone: 'blue' | 'green' | 'purple';
+  cards: Array<{ tab: TabKey; title: string; description: string; icon: string; accent: string }>;
+}> = [
+  {
+    title: 'Applicant Portal',
+    tone: 'blue',
+    cards: [
+      { tab: 'create-applicant', title: 'Create Applicant', description: 'Register a new applicant profile.', icon: 'ID', accent: 'blue' },
+      { tab: 'submit-application', title: 'Create Application', description: 'Start a new land registration application.', icon: 'DOC', accent: 'blue' },
+      { tab: 'all-applications', title: 'All Applications', description: 'Browse and filter submitted applications.', icon: 'LIST', accent: 'mint' },
+      { tab: 'my-applications', title: 'My Applications', description: 'View applications for one applicant.', icon: 'FILE', accent: 'mint' },
+      { tab: 'track-application', title: 'Track Application', description: 'Track status and progress.', icon: 'FIND', accent: 'violet' },
+      { tab: 'upload-document', title: 'Upload Documents', description: 'Upload required document metadata.', icon: 'UP', accent: 'amber' },
+      { tab: 'add-comment', title: 'Add Comment', description: 'Add an applicant comment.', icon: 'MSG', accent: 'cyan' },
+      { tab: 'submit-objection', title: 'Submit Objection', description: 'Submit an objection for an application.', icon: '!', accent: 'red' },
+      { tab: 'timeline', title: 'Timeline', description: 'View application timeline events.', icon: 'CLK', accent: 'cyan' },
+    ],
+  },
+  {
+    title: 'Staff Operations',
+    tone: 'green',
+    cards: [
+      { tab: 'create-staff', title: 'Staff Management', description: 'Create and manage staff members.', icon: 'USR', accent: 'mint' },
+      { tab: 'staff-list', title: 'Staff List', description: 'View staff by role and activity.', icon: 'TEAM', accent: 'blue' },
+      { tab: 'staff-detail', title: 'Staff Detail', description: 'Open one staff profile and summary.', icon: 'ID', accent: 'violet' },
+      { tab: 'auto-assign', title: 'Auto Assign Surveyor', description: 'Assign a surveyor by zone and workload.', icon: 'AUTO', accent: 'amber' },
+      { tab: 'survey-tasks', title: 'Survey Tasks', description: 'View and manage survey tasks.', icon: 'TASK', accent: 'blue' },
+      { tab: 'survey-milestone', title: 'Survey Milestones', description: 'Track survey milestones.', icon: 'FLAG', accent: 'violet' },
+      { tab: 'survey-report', title: 'Survey Reports', description: 'View and manage survey reports.', icon: 'REP', accent: 'amber' },
+      { tab: 'registrar-review', title: 'Registrar Reviews', description: 'Review and process applications.', icon: 'OK', accent: 'red' },
+    ],
+  },
+  {
+    title: 'Analytics & Maps',
+    tone: 'purple',
+    cards: [
+      { tab: 'analytics-map', title: 'Dashboard Analytics', description: 'View key metrics and system KPIs.', icon: 'PIE', accent: 'violet' },
+      { tab: 'analytics-map', title: 'Parcel Map Viewer', description: 'Explore parcels on the interactive map.', icon: 'MAP', accent: 'mint' },
+      { tab: 'analytics-map', title: 'Workload Analysis', description: 'Analyze workload of staff and surveyors.', icon: 'BAR', accent: 'blue' },
+      { tab: 'analytics-map', title: 'Application Statistics', description: 'View statistics and trends.', icon: 'LINE', accent: 'amber' },
+    ],
+  },
+];
+
+const sideNavItems: Array<{ key: TabKey; label: string; icon: string }> = [
+  { key: 'dashboard', label: 'Dashboard', icon: 'HOME' },
+  { key: 'create-applicant', label: 'Applicants', icon: 'USER' },
+  { key: 'create-staff', label: 'Staff Operations', icon: 'TEAM' },
+  { key: 'analytics-map', label: 'Analytics', icon: 'BAR' },
+  { key: 'analytics-map', label: 'Maps', icon: 'MAP' },
+];
+
+function Dashboard({ onSelect }: { onSelect: (tab: TabKey) => void }) {
+  return (
+    <section className="dashboard-view">
+      <div className="welcome-block">
+        <h1>Welcome to LRMIS</h1>
+        <p>Manage land registration applications, surveys, reviews and access analytics through a simple and organized platform.</p>
+      </div>
+
+      {dashboardGroups.map((group) => (
+        <section className="feature-section" key={group.title}>
+          <h2 className={`section-title ${group.tone}`}>{group.title}</h2>
+          <div className="feature-grid">
+            {group.cards.map((card) => (
+              <button className="feature-card" key={`${group.title}-${card.title}`} type="button" onClick={() => onSelect(card.tab)}>
+                <span className={`feature-icon ${card.accent}`}>{card.icon}</span>
+                <strong>{card.title}</strong>
+                <span>{card.description}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+    </section>
+  );
+}
+
 function App() {
-  const [activeTab, setActiveTab] = useState<TabKey>('create-applicant');
+  const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const activeLabel = useMemo(() => tabs.find((tab) => tab.key === activeTab)?.label ?? '', [activeTab]);
+  const activeGroup = useMemo(() => tabs.find((tab) => tab.key === activeTab)?.group ?? '', [activeTab]);
+
+  function isSideNavActive(item: { key: TabKey; label: string }) {
+    if (item.label === 'Applicants') {
+      return activeGroup === 'Applicant';
+    }
+    if (item.label === 'Staff Operations') {
+      return activeGroup === 'Staff Operations';
+    }
+    if (item.label === 'Analytics') {
+      return activeTab === 'analytics-map';
+    }
+    if (item.label === 'Maps') {
+      return false;
+    }
+    return item.key === activeTab;
+  }
 
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -143,6 +251,12 @@ function App() {
   const [lookupApplicantId, setLookupApplicantId] = useState('');
   const [trackApplicationId, setTrackApplicationId] = useState('');
   const [timelineApplicationId, setTimelineApplicationId] = useState('');
+  const [sharedApplicationFilters, setSharedApplicationFilters] = useState({
+    applicant_id: '',
+    status: '',
+    application_type: '' as '' | ApplicationType,
+    zone_id: '',
+  });
 
   const [documentForm, setDocumentForm] = useState({
     application_id: '',
@@ -177,6 +291,7 @@ function App() {
   });
 
   const [staffListFilters, setStaffListFilters] = useState({ role: '' as '' | StaffRole, active: 'true' });
+  const [staffDetailId, setStaffDetailId] = useState('');
   const [taskFilters, setTaskFilters] = useState({ surveyor_id: '', application_id: '', status: '' });
 
   const [assignForm, setAssignForm] = useState({
@@ -263,6 +378,23 @@ function App() {
       finishAction('Applications', applications, `Loaded ${applications.length} applications`);
     } catch (error) {
       failAction(error, 'Unable to load applications');
+    }
+  }
+
+  async function handleSharedApplicationsLookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Loading shared applications...');
+
+    try {
+      const applications = await listSharedApplications({
+        applicant_id: sharedApplicationFilters.applicant_id || undefined,
+        status: sharedApplicationFilters.status || undefined,
+        application_type: sharedApplicationFilters.application_type || undefined,
+        zone_id: sharedApplicationFilters.zone_id || undefined,
+      });
+      finishAction('All applications', applications, `Loaded ${applications.length} applications`);
+    } catch (error) {
+      failAction(error, 'Unable to load shared applications');
     }
   }
 
@@ -375,6 +507,18 @@ function App() {
     }
   }
 
+  async function handleStaffDetail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Loading staff profile...');
+
+    try {
+      const staff = await getStaff(staffDetailId);
+      finishAction('Staff profile', staff, `Loaded staff member ${staff.id}`);
+    } catch (error) {
+      failAction(error, 'Unable to load staff member');
+    }
+  }
+
   async function handleTaskList(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     startAction('Loading survey tasks...');
@@ -460,27 +604,42 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="hero">
-        <div>
-          <h1>LRMIS - Land Registration Management Information System</h1>
-          <p>Applicant Portal + Student 3 Surveyors, Registrar, and Assignment module</p>
+      <aside className="sidebar">
+        <div className="brand-mark">
+          <span>LR</span>
+          <strong>LRMIS</strong>
         </div>
-        <div className="hero-card">
-          <span>Active view</span>
-          <strong>{activeLabel}</strong>
-          <p>Backend: FastAPI + PyMongo</p>
-          <p>Frontend: React + TypeScript + Vite</p>
-        </div>
-      </header>
+        <nav className="side-nav">
+          {sideNavItems.map((item) => (
+            <button key={`${item.label}-${item.key}`} type="button" className={isSideNavActive(item) ? 'side-link active' : 'side-link'} onClick={() => setActiveTab(item.key)}>
+              <span>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
 
-      <nav className="tab-bar">
-        {tabs.map((tab) => (
-          <button key={tab.key} type="button" className={tab.key === activeTab ? 'tab active' : 'tab'} onClick={() => setActiveTab(tab.key)}>
-            <small>{tab.group}</small>
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+      <main className="main-shell">
+        <header className="topbar">
+          <strong>Land Registration Management Information System</strong>
+          <div className="user-menu">
+            <span>LR</span>
+            LRMIS
+          </div>
+        </header>
+
+        <div className="content-shell">
+          {activeTab !== 'dashboard' && (
+            <div className="view-heading">
+              <button type="button" className="back-link" onClick={() => setActiveTab('dashboard')}>Dashboard</button>
+              <div>
+                <span>{tabs.find((tab) => tab.key === activeTab)?.group}</span>
+                <h1>{activeLabel}</h1>
+              </div>
+            </div>
+          )}
+
+      {activeTab === 'dashboard' && <Dashboard onSelect={setActiveTab} />}
 
       {activeTab === 'create-applicant' && (
         <section className="card">
@@ -513,6 +672,19 @@ function App() {
             <label>Zone ID<input value={applicationForm.zone_id} onChange={(event) => setApplicationForm({ ...applicationForm, zone_id: event.target.value })} required /></label>
             <label className="full-width">Description<textarea value={applicationForm.description} onChange={(event) => setApplicationForm({ ...applicationForm, description: event.target.value })} rows={4} /></label>
             <button type="submit" disabled={loading}>Submit application</button>
+          </form>
+        </section>
+      )}
+
+      {activeTab === 'all-applications' && (
+        <section className="card">
+          <h2>All Applications</h2>
+          <form className="grid-form" onSubmit={handleSharedApplicationsLookup}>
+            <label>Applicant ID<input value={sharedApplicationFilters.applicant_id} onChange={(event) => setSharedApplicationFilters({ ...sharedApplicationFilters, applicant_id: event.target.value })} /></label>
+            <label>Status<input placeholder="submitted" value={sharedApplicationFilters.status} onChange={(event) => setSharedApplicationFilters({ ...sharedApplicationFilters, status: event.target.value })} /></label>
+            <label>Application type<select value={sharedApplicationFilters.application_type} onChange={(event) => setSharedApplicationFilters({ ...sharedApplicationFilters, application_type: event.target.value as '' | ApplicationType })}><option value="">all</option>{applicationTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+            <label>Zone ID<input value={sharedApplicationFilters.zone_id} onChange={(event) => setSharedApplicationFilters({ ...sharedApplicationFilters, zone_id: event.target.value })} /></label>
+            <button type="submit" disabled={loading}>Load applications</button>
           </form>
         </section>
       )}
@@ -615,6 +787,16 @@ function App() {
         </section>
       )}
 
+      {activeTab === 'staff-detail' && (
+        <section className="card">
+          <h2>Staff Detail</h2>
+          <form className="inline-form" onSubmit={handleStaffDetail}>
+            <label>Staff ID<input value={staffDetailId} onChange={(event) => setStaffDetailId(event.target.value)} required /></label>
+            <button type="submit" disabled={loading}>Load staff profile</button>
+          </form>
+        </section>
+      )}
+
       {activeTab === 'auto-assign' && (
         <section className="card">
           <h2>Auto Assign Surveyor</h2>
@@ -686,9 +868,13 @@ function App() {
         </section>
       )}
 
+      {activeTab === 'analytics-map' && <AnalyticsPage />}
+
       {statusMessage && <p className="status">{loading ? `${statusMessage}` : statusMessage}</p>}
       {errorMessage && <p className="error">{errorMessage}</p>}
       <JsonBlock title={resultTitle} value={result} />
+        </div>
+      </main>
     </div>
   );
 }

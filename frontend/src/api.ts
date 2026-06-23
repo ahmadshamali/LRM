@@ -6,14 +6,22 @@ import type {
   AutoAssignResponse,
   CommentRecord,
   DocumentRecord,
+  AnalyticsKpis,
   ObjectionRecord,
+  GeoJsonFeatureCollection,
+  ProcessingTimeRecord,
   RegistrarDecision,
+  RegistrarAnalytics,
   StaffMember,
   StaffRole,
+  StatusCount,
+  SurveyorAnalytics,
   SurveyMilestone,
   SurveyReport,
   SurveyTask,
   TimelineEvent,
+  TypeCount,
+  ZoneCount,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -259,4 +267,44 @@ export function registrarReview(applicationId: string, payload: {
     headers: staffHeaders(),
     body: JSON.stringify(payload),
   });
+}
+
+export function getAnalyticsKpis(): Promise<AnalyticsKpis> {
+  return request<AnalyticsKpis>('/analytics/kpis');
+}
+
+export function getApplicationsByStatus(): Promise<StatusCount[]> {
+  return request<StatusCount[]>('/analytics/applications-by-status');
+}
+
+export function getApplicationsByType(): Promise<TypeCount[]> {
+  return request<TypeCount[]>('/analytics/applications-by-type');
+}
+
+export function getApplicationsByZone(): Promise<ZoneCount[]> {
+  return request<ZoneCount[]>('/analytics/applications-by-zone');
+}
+
+export function getProcessingTime(): Promise<ProcessingTimeRecord[]> {
+  return request<ProcessingTimeRecord[]>('/analytics/processing-time');
+}
+
+export function getSurveyorAnalytics(): Promise<SurveyorAnalytics[]> {
+  return request<SurveyorAnalytics[]>('/analytics/surveyors');
+}
+
+export function getRegistrarAnalytics(): Promise<RegistrarAnalytics[]> {
+  return request<RegistrarAnalytics[]>('/analytics/registrars');
+}
+
+export function getParcelsGeoFeed(): Promise<GeoJsonFeatureCollection> {
+  return request<GeoJsonFeatureCollection>('/analytics/geofeeds/parcels');
+}
+
+export function getPendingHeatmapGeoFeed(): Promise<GeoJsonFeatureCollection> {
+  return request<GeoJsonFeatureCollection>('/analytics/geofeeds/pending-heatmap');
+}
+
+export function getApplicationsCsvUrl(): string {
+  return `${API_BASE_URL}/analytics/export/applications.csv`;
 }

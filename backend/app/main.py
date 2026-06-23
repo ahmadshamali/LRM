@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .analytics import router as analytics_router
 from .db import get_client, get_db
 from .routes import router
 
@@ -19,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(analytics_router)
 
 
 @app.get("/")

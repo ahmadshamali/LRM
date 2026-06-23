@@ -7,7 +7,7 @@ Simple GitHub-ready starter for the COMP4382 final project.
 
 - Backend: FastAPI
 - Database: Local MongoDB with PyMongo
-- Frontend: React + TypeScript + Vite
+- Frontend: React + TypeScript + Vite + Leaflet
 - Repository style: single GitHub repository
 
 ## How to Run
@@ -74,8 +74,23 @@ The backend stores data in these MongoDB collections:
 - application_documents
 - objections
 - application_comments
+- staff_members
+- survey_tasks
+- survey_reports
+- certificates
+- parcels
+- performance_logs
+
+## Frontend Pages
+
+- `http://localhost:5173` opens the tab-based demo UI.
+- Use the `Analytics and Map` tab for KPIs, grouped analytics, parcel GeoJSON, and pending application highlights.
+
+The frontend uses `leaflet` and `@types/leaflet` for the OpenStreetMap parcel map.
 
 ## API Endpoints
+
+### Applicant Endpoints
 
 - `POST /applicants`
 - `GET /applicants/{applicant_id}`
@@ -88,3 +103,37 @@ The backend stores data in these MongoDB collections:
 - `POST /applications/{application_id}/objections`
 - `GET /applications/{application_id}/timeline`
 - Document upload is metadata-only for this starter.
+
+### Staff, Survey, and Registrar Endpoints
+
+Staff endpoints require the `x-staff-token` header. The frontend uses `VITE_STAFF_TOKEN` or `staff-secret` by default.
+
+- `POST /staff`
+- `GET /staff`
+- `GET /staff/{staff_id}`
+- `GET /survey-tasks`
+- `POST /applications/{application_id}/auto-assign-surveyor`
+- `PATCH /applications/{application_id}/survey-milestone`
+- `POST /applications/{application_id}/survey-report`
+- `PATCH /applications/{application_id}/registrar-review`
+
+### Analytics and Map Endpoints
+
+- `GET /analytics/kpis`
+- `GET /analytics/applications-by-status`
+- `GET /analytics/applications-by-type`
+- `GET /analytics/applications-by-zone`
+- `GET /analytics/processing-time`
+- `GET /analytics/surveyors`
+- `GET /analytics/registrars`
+- `GET /analytics/geofeeds/parcels`
+- `GET /analytics/geofeeds/pending-heatmap`
+- `GET /analytics/export/applications.csv`
+
+The analytics router attempts to ensure these indexes without failing if they already exist:
+
+- `land_applications.status`
+- `land_applications.workflow.current_state`
+- `land_applications.application_type`
+- `land_applications.parcel_ref.zone_id`
+- `parcels.geometry` as a `2dsphere` index when parcel geometry is valid
