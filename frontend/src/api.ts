@@ -24,7 +24,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const data = contentType.includes('application/json') ? await response.json() : null;
 
   if (!response.ok) {
-    const message = typeof data?.detail === 'string' ? data.detail : `Request failed with status ${response.status}`;
+    const message =
+      typeof data?.detail === 'string'
+        ? data.detail
+        : Array.isArray(data?.detail)
+          ? data.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(', ')
+          : `Request failed with status ${response.status}`;
     throw new Error(message);
   }
 
@@ -70,6 +75,28 @@ export function createApplication(payload: {
 
 export function listApplications(applicantId: string): Promise<Application[]> {
   return request<Application[]>(`/applicants/${applicantId}/applications`);
+}
+
+export function listSharedApplications(filters: {
+  applicant_id?: string;
+  status?: string;
+  application_type?: ApplicationType;
+  zone_id?: string;
+  skip?: number;
+  limit?: number;
+  sort_by?: 'created_at' | 'updated_at' | 'status' | 'application_type' | 'zone_id';
+  sort_order?: 'asc' | 'desc';
+} = {}): Promise<Application[]> {
+  const params = new URLSearchParams();
+
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      params.set(key, String(value));
+    }
+  });
+
+  const query = params.toString();
+  return request<Application[]>(`/applications${query ? `?${query}` : ''}`);
 }
 
 export function getApplication(applicationId: string): Promise<Application> {

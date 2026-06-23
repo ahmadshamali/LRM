@@ -1,5 +1,9 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, status
 
+from typing import Literal, Optional
+
+from fastapi import Query
+
 from .db import get_db
 from .schemas import ApplicantCreate, ApplicationCreate, CommentCreate, DocumentCreate, ObjectionCreate
 from .utils import serialize_document, to_object_id, utc_now
@@ -60,12 +64,13 @@ def get_applicant(applicant_id: str, collections=Depends(get_collections)):
 def create_application(payload: ApplicationCreate, collections=Depends(get_collections)):
     fetch_applicant_or_404(collections["applicants"], payload.applicant_id)
 
+    now = utc_now()
     document = payload.model_dump()
     document["applicant_id"] = to_object_id(payload.applicant_id)
     document["status"] = "submitted"
-    document["created_at"] = utc_now()
+    document["created_at"] = now
+    document["updated_at"] = now
 
-    # TODO: Student 1 will implement workflow/state transitions.
     result = collections["land_applications"].insert_one(document)
     created = collections["land_applications"].find_one({"_id": result.inserted_id})
     return serialize_document(created)
@@ -76,6 +81,39 @@ def list_applications(applicant_id: str, collections=Depends(get_collections)):
     fetch_applicant_or_404(collections["applicants"], applicant_id)
     records = list(collections["land_applications"].find({"applicant_id": to_object_id(applicant_id)}).sort("created_at", -1))
     return [serialize_document(record) for record in records]
+
+
+@router.get("/applications")
+def list_shared_applications(
+    applicant_id: Optional[str] = None,
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    application_type: Optional[str] = None,
+    zone_id: Optional[str] = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+    sort_by: Literal["created_at", "updated_at", "status", "application_type", "zone_id"] = "created_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+    collections=Depends(get_collections),
+):
+    query = {}
+    if applicant_id:
+        query["applicant_id"] = to_object_id(applicant_id)
+    if status_filter:
+        query["status"] = status_filter
+    if application_type:
+        query["application_type"] = application_type
+    if zone_id:
+        query["zone_id"] = zone_id
+
+    sort_direction = 1 if sort_order == "asc" else -1
+    cursor = (
+        collections["land_applications"]
+        .find(query)
+        .sort(sort_by, sort_direction)
+        .skip(skip)
+        .limit(limit)
+    )
+    return [serialize_document(record) for record in cursor]
 
 
 @router.get("/applications/{application_id}")

@@ -1,700 +1,461 @@
-# LRMIS - Land Registration Management Information System
+# LRMIS_Codex_Guide.md
 
-## 1. Project Overview
+# Land Registration Management Information System (LRMIS)
 
-The **Land Registration Management Information System (LRMIS)** is a course project for managing land registration services digitally.
+## Project Overview
 
-The system supports applicants, land applications, surveyors, registrars, certificates, maps, and analytics. It is not only a simple CRUD system. The important part is that land applications must move through a controlled workflow with validation rules, documents, survey tasks, registrar review, objections, and certificate issuance.
+LRMIS (Land Registration Management Information System) is a workflow-driven, geospatial land registration platform built for a Land Authority or Municipality.
 
-The main goal is to improve land registration transparency, accuracy, and tracking by replacing manual paper-based steps with a structured digital workflow.
+The system manages:
 
----
+* Land registration applications
+* Property ownership records
+* Parcel information
+* Survey operations
+* Registrar reviews
+* Objections and disputes
+* Certificate issuance
+* Geospatial visualization
+* Analytics and reporting
 
-## 2. Main System Workflow
+The project must NOT be implemented as a simple CRUD application.
 
-A normal application should follow this flow:
-
-```text
-submitted
-↓
-pre_checked
-↓
-survey_required
-↓
-surveyed
-↓
-legal_review
-↓
-approved
-↓
-certificate_issued
-↓
-closed
-```
-
-There are also alternative states:
-
-```text
-rejected
-on_hold
-missing_documents
-under_objection
-```
-
-Example workflow:
-
-1. Applicant submits a land registration application.
-2. Staff checks applicant, parcel, and document information.
-3. If a field survey is required, the application moves to survey-required state.
-4. A surveyor is assigned based on zone, availability, skill, and workload.
-5. Surveyor completes field milestones and uploads survey report metadata.
-6. Registrar reviews documents, parcel details, survey report, and objections.
-7. Registrar approves or rejects the application.
-8. If approved, certificate metadata is generated.
-9. Application is closed after certificate issuance.
+The system must enforce business workflows, validation rules, assignment logic, audit logs, geospatial data handling, dashboards, and reporting.
 
 ---
 
-## 3. Technology Stack
+# Technology Stack
 
-### Backend
+## Backend
 
-- FastAPI
-- Python
-- PyMongo
-- Pydantic
-- Uvicorn
-- python-dotenv
+* Python 3.12+
+* FastAPI
+* Pydantic v2
+* PyMongo
+* MongoDB
 
-### Database
+## Frontend
 
-- MongoDB
-- Local MongoDB using Docker is recommended for easier setup.
+* React
+* TypeScript
+* Vite
+* React Router
+* React Query
+* Leaflet
+* OpenStreetMap
 
-### Frontend
+## Database
 
-- React
-- TypeScript
-- Vite
-- Plain CSS or any simple UI approach
+MongoDB
 
-### Map and Visualization
+Use:
 
-- OpenStreetMap
-- Leaflet
-- GeoJSON
-
-### Documentation
-
-- Swagger/OpenAPI
-- README.md
-- Postman collection if needed
+* Collections
+* Aggregation Pipelines
+* GeoJSON
+* 2dsphere Indexes
 
 ---
 
-## 4. Main MongoDB Collections
+# Architecture
 
-The system can use these collections:
+Use clean architecture.
 
-```text
-applicants
-land_applications
-parcels
-application_documents
-application_comments
-objections
-staff_members
-survey_tasks
-survey_reports
-certificates
-performance_logs
-```
+Structure:
 
-Each module may use only the collections it needs, but shared field names must stay consistent.
+backend/
+├── app/
+│ ├── api/
+│ ├── services/
+│ ├── repositories/
+│ ├── models/
+│ ├── schemas/
+│ ├── core/
+│ ├── utils/
+│ └── database/
 
-Important shared fields:
+Rules:
 
-```text
-applicant_id
-application_id
-status
-application_type
-parcel_number
-block_number
-basin_number
-zone_id
-created_at
-updated_at
-```
+* Business logic belongs in services
+* API routes stay thin
+* MongoDB access belongs in repositories
+* Validation belongs in Pydantic schemas
 
 ---
 
-# 5. Project Modules
-
-The project is divided into **four modules**.
-
-There are **three students**, so each student takes one main module, and the fourth module is shared by the group.
-
----
+# Main Modules
 
 ## Module 1: Land Application Management
 
-### Responsible Student
+Responsibilities:
 
-Student 1
+* Create applications
+* Manage workflow transitions
+* Validate application requirements
+* Store parcel references
+* Store certificate information
+* Store registrar notes
+* Track document verification status
 
-### Purpose
+Application Types:
 
-This is the core backend workflow module. It manages land registration applications and controls how an application moves from one state to another.
-
-### What This Module Does
-
-This module allows the system to:
-
-- Create land registration applications.
-- Retrieve application details.
-- List applications with filtering, pagination, and sorting.
-- Store parcel information.
-- Store parcel location using GeoJSON.
-- Store attached documents and their verification states.
-- Store registrar notes and internal remarks.
-- Move applications through the official workflow.
-- Reject applications with a mandatory reason.
-- Put applications on hold with a reason.
-- Generate certificate metadata after approval.
-- Record important actions in performance logs.
-
-### Main Workflow Responsibilities
-
-Student 1 must enforce rules such as:
-
-- An application cannot move to `pre_checked` unless applicant and parcel information are complete.
-- An application cannot move to `survey_required` unless parcel location is valid.
-- An application cannot move to `surveyed` unless a survey report exists.
-- An application cannot move to `legal_review` unless ownership documents are uploaded.
-- An application cannot move to `approved` unless legal review is completed.
-- A certificate cannot be issued unless the application is approved.
-- A rejected application must include a rejection reason.
-- Applications with objections should move to `under_objection`.
-
-### Suggested APIs
-
-```http
-POST /applications
-GET /applications
-GET /applications/{application_id}
-PATCH /applications/{application_id}/transition
-POST /applications/{application_id}/hold
-POST /applications/{application_id}/reject
-POST /applications/{application_id}/certificate
-```
-
-### Difficulty
-
-This is one of the hardest modules because it contains:
-
-- Workflow/state-machine logic.
-- Validation rules.
-- Certificate state.
-- Application status transitions.
-- Shared data used by all other modules.
+* first_registration
+* ownership_transfer
+* parcel_subdivision
+* parcel_merge
+* boundary_correction
+* certificate_request
 
 ---
 
-## Module 2: Applicant Portal and Profiles
+## Module 2: Applicant Portal
 
-### Responsible Student
+Applicant Types:
 
-Student 2
+* citizen
+* lawyer
+* company
+* surveyor
+* representative
 
-### Purpose
+Verification States:
 
-This module is the applicant-facing part of the system. It allows citizens, lawyers, companies, surveyors, and representatives to create profiles, submit applications, upload documents, track status, add comments, and submit objections.
+* unverified
+* verified
+* suspended
 
-### What This Module Does
+Features:
 
-This module allows applicants to:
+* Create profile
+* Submit applications
+* Upload documents
+* Submit objections
+* Track status
+* View timeline
+* Receive notifications
 
-- Create applicant profiles.
-- Submit simple land registration applications.
-- View their submitted applications.
-- Track application status.
-- Upload required document metadata.
-- Add comments or responses.
-- Submit objections.
-- View application timeline/history.
-- Receive notification stubs through email/SMS fields.
+---
 
-### Applicant Profile Fields
+## Module 3: Surveyors and Registrar
 
-An applicant profile should include:
+Features:
 
-```text
-full_name
-applicant_type
-verification_state
-national_id
-registration_number
-email
-phone
-city
-zone_id
-preferred_language
-notification_method
-created_at
-```
+* Staff management
+* Survey assignment
+* Milestone tracking
+* Survey reports
+* Registrar review
 
-Applicant types:
+Assignment Policy:
 
-```text
-citizen
-lawyer
-company
-surveyor
-authorized_representative
-```
+Priority order:
 
-Verification states:
+1. Zone match
+2. Availability
+3. Workload
+4. Skill match
+5. Priority score
 
-```text
-unverified
-verified
-suspended
-```
+---
 
-### Application Submission Fields
+## Module 4: Analytics and Mapping
 
-When the applicant submits an application, the system should store:
+Features:
 
-```text
-applicant_id
-application_type
-parcel_number
-block_number
-basin_number
-zone_id
-description
-status
-created_at
-```
+* KPI dashboard
+* Application statistics
+* Surveyor workload
+* Registrar workload
+* Live parcel map
+* Heatmaps
+* Reports
 
-Application types:
+Use:
 
-```text
-first_registration
-ownership_transfer
-parcel_subdivision
-parcel_merge
-boundary_correction
-certificate_request
-```
+* MongoDB aggregation pipelines
+* GeoJSON feeds
+* Leaflet maps
 
-Default application status:
+---
 
-```text
+# Workflow State Machine
+
+Main workflow:
+
 submitted
-```
+→ pre_checked
+→ survey_required
+→ surveyed
+→ legal_review
+→ approved
+→ certificate_issued
+→ closed
 
-### Suggested APIs
+Alternative states:
 
-```http
-POST /applicants
-GET /applicants/{applicant_id}
-POST /applications
-GET /applicants/{applicant_id}/applications
-GET /applications/{application_id}
-POST /applications/{application_id}/documents
-POST /applications/{application_id}/comments
-POST /applications/{application_id}/objections
-GET /applications/{application_id}/timeline
-```
-
-### Important Note
-
-This module may create the initial application record, but it should not implement the full workflow logic. Full workflow transitions belong to Module 1.
-
-For example:
-
-```text
-Applicant Portal creates application with status = submitted.
-Student 1 later manages transitions such as submitted → pre_checked.
-```
-
-### Difficulty
-
-This is the easiest module because most of it is forms, profile CRUD, document metadata, comments, objections, and status viewing. It has less complex business logic than Module 1 and no assignment algorithm like Module 3.
+* rejected
+* on_hold
+* missing_documents
+* under_objection
 
 ---
 
-## Module 3: Surveyors, Registrar, and Assignment
+# Workflow Rules
 
-### Responsible Student
+Validation rules must be enforced server-side.
 
-Student 3
+Rule 1:
 
-### Purpose
+Cannot move to:
 
-This module manages staff, surveyors, registrar decisions, survey task assignment, and survey progress.
-
-### What This Module Does
-
-This module allows the system to:
-
-- Create and manage surveyor accounts.
-- Create and manage registrar/staff accounts.
-- Define surveyor coverage zones.
-- Define surveyor skills and specialization.
-- Define surveyor availability and schedule.
-- Automatically assign surveyors to survey-required applications.
-- Manually reassign surveyors if needed.
-- Track field survey milestones.
-- Upload survey report metadata.
-- Allow registrar staff to review survey results.
-- Add internal decision notes.
-- Implement basic staff-only access control.
-
-### Assignment Policy
-
-The automatic assignment should consider:
-
-```text
-zone match
-surveyor availability
-workload balancing
-skill match
-application priority
-existing assigned tasks
-```
-
-Simple version:
-
-```text
-Find surveyors in the same zone.
-Filter available surveyors.
-Filter surveyors with matching skills.
-Choose the surveyor with the lowest active workload.
-Assign the task.
-```
-
-### Survey Milestones
-
-Survey tasks should follow this flow:
-
-```text
-assigned
-↓
-visit_scheduled
-↓
-arrived_on_site
-↓
-survey_started
-↓
-survey_completed
-↓
-report_uploaded
-↓
-registrar_reviewed
-```
-
-### Suggested APIs
-
-```http
-POST /staff
-GET /staff/{staff_id}
-POST /applications/{application_id}/auto-assign-surveyor
-PATCH /applications/{application_id}/survey-milestone
-POST /applications/{application_id}/survey-report
-PATCH /applications/{application_id}/registrar-review
-```
-
-### Difficulty
-
-This module is medium difficulty. It is not as hard as Module 1, but it has assignment logic and staff-only actions.
-
-The hardest part is the automatic surveyor assignment algorithm.
-
----
-
-## Module 4: Data Analysis, Map, and Visualization
-
-### Responsible Students
-
-Group Module
-
-### Purpose
-
-This module provides dashboards, analytics, spatial visualization, maps, reports, and management insights.
-
-### What This Module Does
-
-The group module should show:
-
-- Total applications.
-- Applications by status.
-- Applications by type.
-- Pending applications.
-- Approved applications.
-- Rejected applications.
-- Applications under objection.
-- Average processing time.
-- Surveyor workload.
-- Registrar workload.
-- Certificates issued per month.
-- Hotspot zones with high number of applications.
-- Delayed applications.
-
-### Map Features
-
-The map should display:
-
-- Land parcels.
-- Pending applications.
-- Disputed parcels.
-- Survey-required applications.
-- Survey task locations.
-- Parcel boundaries using GeoJSON.
-
-Recommended map tools:
-
-```text
-OpenStreetMap
-Leaflet
-GeoJSON
-```
-
-### Analytics APIs
-
-```http
-GET /analytics/kpis
-GET /analytics/applications-by-status
-GET /analytics/applications-by-zone
-GET /analytics/processing-time
-GET /analytics/surveyors
-GET /analytics/registrars
-GET /analytics/geofeeds/parcels
-GET /analytics/geofeeds/pending-heatmap
-```
-
-### MongoDB Operators
-
-This module should use MongoDB aggregation and geospatial tools such as:
-
-```text
-$match
-$group
-$sort
-$project
-$lookup
-$facet
-$bucketAuto
-$geoNear
-$unwind
-```
-
-### Difficulty
-
-This module is shared because it depends on data from all other modules.
-
-It reads from:
-
-```text
-land_applications
-applicants
-survey_tasks
-staff_members
-certificates
-parcels
-objections
-performance_logs
-```
-
-The frontend dashboard and map can be simple, but they must clearly show useful statistics and spatial information.
-
----
-
-# 6. Dependency Between Modules
-
-The modules are connected through shared data.
-
-## Module Dependency Flow
-
-```text
-Applicant Profile
-    ↓
-Land Application
-    ↓
-Workflow Validation
-    ↓
-Survey Assignment
-    ↓
-Registrar Review
-    ↓
-Certificate Issuance
-    ↓
-Analytics and Map
-```
-
-## Important Dependencies
-
-### Module 2 depends on Module 1
-
-Applicant Portal creates and tracks applications, but Module 1 controls the full application workflow.
-
-### Module 1 depends on Module 2
-
-Every application needs an applicant reference.
-
-### Module 3 depends on Module 1
-
-Survey tasks only exist when an application requires a survey.
-
-### Module 4 depends on all modules
-
-Analytics and maps read data from applications, applicants, survey tasks, certificates, parcels, and objections.
-
----
-
-# 7. What Each Student Should Agree On
-
-Before implementing separately, all students should agree on shared contracts.
-
-## Shared Field Names
-
-```text
-applicant_id
-application_id
-status
-application_type
-parcel_number
-block_number
-basin_number
-zone_id
-created_at
-updated_at
-```
-
-## Shared Collection Names
-
-```text
-applicants
-land_applications
-application_documents
-application_comments
-objections
-staff_members
-survey_tasks
-survey_reports
-certificates
-performance_logs
-parcels
-```
-
-## Shared Status Names
-
-```text
-submitted
 pre_checked
+
+unless:
+
+* applicant data complete
+* parcel data complete
+
+Rule 2:
+
+Cannot move to:
+
 survey_required
+
+unless:
+
+* parcel location valid
+
+Rule 3:
+
+Cannot move to:
+
 surveyed
+
+unless:
+
+* survey report exists
+
+Rule 4:
+
+Cannot move to:
+
 legal_review
+
+unless:
+
+* ownership documents uploaded
+
+Rule 5:
+
+Cannot move to:
+
 approved
-certificate_issued
-closed
-rejected
-on_hold
-missing_documents
+
+unless:
+
+* legal review completed
+
+Rule 6:
+
+Cannot issue certificate unless:
+
+* application approved
+
+Rule 7:
+
+Rejected applications must include:
+
+* rejection reason
+
+Rule 8:
+
+Applications with objections move to:
+
 under_objection
-```
-
-## Shared Application Types
-
-```text
-first_registration
-ownership_transfer
-parcel_subdivision
-parcel_merge
-boundary_correction
-certificate_request
-```
 
 ---
 
-# 8. Recommended Simple Team Split
+# Survey Milestones
 
-## Student 1
-
-Focus on:
-
-```text
-land_applications
-workflow transitions
-certificate metadata
-application validation
-registrar notes
-```
-
-## Student 2
-
-Focus on:
-
-```text
-applicants
-application submission
-document metadata
-comments
-objections
-timeline display
-applicant dashboard
-```
-
-## Student 3
-
-Focus on:
-
-```text
-staff_members
-survey_tasks
-survey assignment
-survey milestones
-survey reports
-registrar review
-```
-
-## Group
-
-Focus on:
-
-```text
-analytics
-dashboard
-map
-GeoJSON feeds
-reports
-```
+assigned
+→ visit_scheduled
+→ arrived_on_site
+→ survey_started
+→ survey_completed
+→ report_uploaded
+→ registrar_reviewed
 
 ---
 
-# 9. Minimum Working Demo
+# MongoDB Collections
 
-A good final demo should show this sequence:
+Required collections:
 
-1. Create applicant profile.
-2. Submit land registration application.
-3. Upload document metadata.
-4. Staff pre-checks application.
-5. Application moves to survey-required.
-6. Surveyor is assigned.
-7. Surveyor updates survey milestones.
-8. Registrar reviews and approves.
-9. Certificate metadata is generated.
-10. Dashboard and map show updated data.
+* applicants
+* land_applications
+* parcels
+* application_documents
+* objections
+* staff_members
+* survey_tasks
+* survey_reports
+* certificates
+* performance_logs
 
 ---
 
-# 10. Important Notes
+# Audit Logging
 
-- This is a course project, not a production system.
-- Keep implementation simple and explainable.
-- Do not waste time on real SMS, real email, payment, or advanced authentication.
-- The system must demonstrate workflow, validation, MongoDB usage, GeoJSON/map usage, APIs, and clear module separation.
-- Each student must understand their own module and the shared group module.
+Every important action must generate an audit event.
+
+Examples:
+
+* application submitted
+* application approved
+* survey assigned
+* survey completed
+* certificate issued
+* objection submitted
+* registrar review
+
+Store events in:
+
+performance_logs
+
+---
+
+# Geospatial Requirements
+
+Parcel geometry stored as GeoJSON.
+
+Example:
+
+{
+"type": "Polygon",
+"coordinates": [...]
+}
+
+Requirements:
+
+* 2dsphere index
+* zone filtering
+* parcel visualization
+* heatmap generation
+* spatial search
+
+---
+
+# Authentication
+
+Implement JWT authentication.
+
+Roles:
+
+* applicant
+* surveyor
+* registrar
+* admin
+
+Protected endpoints must verify role permissions.
+
+---
+
+# API Standards
+
+Rules:
+
+* RESTful design
+* JSON responses
+* Pagination
+* Filtering
+* Sorting
+* Validation errors
+* Proper HTTP status codes
+
+Examples:
+
+200 OK
+201 Created
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+404 Not Found
+409 Conflict
+500 Internal Server Error
+
+---
+
+# Frontend Pages
+
+Required Screens:
+
+1. Login
+2. Applicant Dashboard
+3. Submit Application
+4. Track Application
+5. Upload Documents
+6. Submit Objection
+7. Staff Dashboard
+8. Application Management Table
+9. Application Details
+10. Registrar Review
+11. Certificate Issuance
+12. Survey Tasks
+13. Survey Task Execution
+14. Live Parcel Map
+15. Analytics Dashboard
+
+---
+
+# Dashboard KPIs
+
+Display:
+
+* Total Applications
+* Pending Applications
+* Approved Applications
+* Rejected Applications
+* Applications Under Objection
+* Applications By Type
+* Applications By Status
+* Average Processing Time
+* Surveyor Workload
+* Registrar Workload
+* Certificates Issued Per Month
+* Hotspot Zones
+
+---
+
+# Coding Standards
+
+Always:
+
+* Use type hints
+* Use Pydantic models
+* Validate inputs
+* Use repository pattern
+* Separate business logic from routes
+* Handle errors gracefully
+* Write reusable code
+
+Never:
+
+* Put database logic in API routes
+* Put business logic in React components
+* Skip workflow validation
+* Bypass authorization checks
+
+---
+
+# Goal
+
+Build a production-style land registration system demonstrating:
+
+* Workflow management
+* Geospatial processing
+* Survey assignment logic
+* Registrar review process
+* Audit logging
+* Analytics dashboards
+* Clean API architecture
+* Professional frontend experience

@@ -308,11 +308,7 @@ function App() {
     <div className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">COMP4382 Final Project</p>
           <h1>LRMIS - Land Registration Management Information System</h1>
-          <p className="hero-copy">
-            Student 2 module: Applicant Portal and Profiles. Use the tabs below to create applicants, submit simple land applications, and track their records.
-          </p>
         </div>
         <div className="hero-card">
           <span>Active view</span>

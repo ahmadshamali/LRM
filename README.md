@@ -2,7 +2,6 @@
 
 Simple GitHub-ready starter for the COMP4382 final project.
 
-This repository implements only **Student 2: Applicant Portal and Profiles**. The backend exposes the applicant profile and application submission endpoints, while the frontend provides a simple tabbed interface for testing and presenting the module.
 
 ## Tech Stack
 
@@ -11,33 +10,7 @@ This repository implements only **Student 2: Applicant Portal and Profiles**. Th
 - Frontend: React + TypeScript + Vite
 - Repository style: single GitHub repository
 
-## Folder Structure
 
-```text
-lrm-is-project/
-  backend/
-    app/
-      main.py
-      db.py
-      schemas.py
-      routes.py
-      utils.py
-    requirements.txt
-  frontend/
-    src/
-      api.ts
-      types.ts
-      App.tsx
-      main.tsx
-      style.css
-    package.json
-    vite.config.ts
-    tsconfig.json
-    index.html
-  .env.example
-  .gitignore
-  README.md
-```
 ## MongoDB Setup
 
 Use a local MongoDB instance.
@@ -87,6 +60,7 @@ The frontend expects the API at `http://localhost:8000` by default. You can chan
 - `GET /applicants/{applicant_id}`
 - `POST /applications`
 - `GET /applicants/{applicant_id}/applications`
+- `GET /applications`
 - `GET /applications/{application_id}`
 - `POST /applications/{application_id}/documents`
 - `POST /applications/{application_id}/comments`
