@@ -1,18 +1,57 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { addComment, addDocument, addObjection, createApplicant, createApplication, getApplication, getApplicant, getTimeline, listApplications } from './api';
-import type { ApplicationType, ApplicantType } from './types';
+import {
+  addComment,
+  addDocument,
+  addObjection,
+  autoAssignSurveyor,
+  createApplicant,
+  createApplication,
+  createStaff,
+  getApplication,
+  getApplicant,
+  getTimeline,
+  listApplications,
+  listStaff,
+  listSurveyTasks,
+  registrarReview,
+  updateSurveyMilestone,
+  uploadSurveyReport,
+} from './api';
+import type { ApplicationType, ApplicantType, RegistrarDecision, StaffRole, SurveyMilestone } from './types';
 
-type TabKey = 'create-applicant' | 'submit-application' | 'my-applications' | 'track-application' | 'upload-document' | 'add-comment' | 'submit-objection' | 'timeline';
+type TabKey =
+  | 'create-applicant'
+  | 'submit-application'
+  | 'my-applications'
+  | 'track-application'
+  | 'upload-document'
+  | 'add-comment'
+  | 'submit-objection'
+  | 'timeline'
+  | 'create-staff'
+  | 'staff-list'
+  | 'auto-assign'
+  | 'survey-tasks'
+  | 'survey-milestone'
+  | 'survey-report'
+  | 'registrar-review';
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: 'create-applicant', label: 'Create Applicant' },
-  { key: 'submit-application', label: 'Submit Application' },
-  { key: 'my-applications', label: 'My Applications' },
-  { key: 'track-application', label: 'Track Application' },
-  { key: 'upload-document', label: 'Upload Document Metadata' },
-  { key: 'add-comment', label: 'Add Comment' },
-  { key: 'submit-objection', label: 'Submit Objection' },
-  { key: 'timeline', label: 'Timeline' },
+const tabs: { key: TabKey; label: string; group: string }[] = [
+  { key: 'create-applicant', label: 'Create Applicant', group: 'Applicant' },
+  { key: 'submit-application', label: 'Submit Application', group: 'Applicant' },
+  { key: 'my-applications', label: 'My Applications', group: 'Applicant' },
+  { key: 'track-application', label: 'Track Application', group: 'Applicant' },
+  { key: 'upload-document', label: 'Upload Document Metadata', group: 'Applicant' },
+  { key: 'add-comment', label: 'Add Comment', group: 'Applicant' },
+  { key: 'submit-objection', label: 'Submit Objection', group: 'Applicant' },
+  { key: 'timeline', label: 'Timeline', group: 'Applicant' },
+  { key: 'create-staff', label: 'Create Staff', group: 'Student 3' },
+  { key: 'staff-list', label: 'Staff List', group: 'Student 3' },
+  { key: 'auto-assign', label: 'Auto Assign Surveyor', group: 'Student 3' },
+  { key: 'survey-tasks', label: 'Survey Tasks', group: 'Student 3' },
+  { key: 'survey-milestone', label: 'Survey Milestone', group: 'Student 3' },
+  { key: 'survey-report', label: 'Survey Report', group: 'Student 3' },
+  { key: 'registrar-review', label: 'Registrar Review', group: 'Student 3' },
 ];
 
 const applicantTypes: ApplicantType[] = ['citizen', 'lawyer', 'company', 'surveyor', 'authorized_representative'];
@@ -24,6 +63,9 @@ const applicationTypes: ApplicationType[] = [
   'boundary_correction',
   'certificate_request',
 ];
+const staffRoles: StaffRole[] = ['surveyor', 'registrar'];
+const milestones: SurveyMilestone[] = ['visit_scheduled', 'arrived_on_site', 'survey_started', 'survey_completed'];
+const registrarDecisions: RegistrarDecision[] = ['accepted', 'rejected', 'needs_revision'];
 
 function JsonBlock({ title, value }: { title: string; value: unknown }) {
   if (!value) {
@@ -38,8 +80,42 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
   );
 }
 
+function splitCsv(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('create-applicant');
+  const activeLabel = useMemo(() => tabs.find((tab) => tab.key === activeTab)?.label ?? '', [activeTab]);
+
+  const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [resultTitle, setResultTitle] = useState('Result');
+  const [result, setResult] = useState<unknown>(null);
+
+  function startAction(message: string) {
+    setLoading(true);
+    setStatusMessage(message);
+    setErrorMessage('');
+    setResult(null);
+  }
+
+  function finishAction(title: string, value: unknown, message: string) {
+    setResultTitle(title);
+    setResult(value);
+    setStatusMessage(message);
+    setLoading(false);
+  }
+
+  function failAction(error: unknown, fallback: string) {
+    setErrorMessage(error instanceof Error ? error.message : fallback);
+    setStatusMessage('');
+    setLoading(false);
+  }
 
   const [applicantForm, setApplicantForm] = useState({
     full_name: '',
@@ -53,10 +129,6 @@ function App() {
     preferred_language: 'en',
     notification_method: 'email' as 'email' | 'sms',
   });
-  const [applicantResult, setApplicantResult] = useState<unknown>(null);
-  const [applicantStatus, setApplicantStatus] = useState('');
-  const [applicantError, setApplicantError] = useState('');
-  const [applicantLoading, setApplicantLoading] = useState(false);
 
   const [applicationForm, setApplicationForm] = useState({
     applicant_id: '',
@@ -67,22 +139,10 @@ function App() {
     zone_id: '',
     description: '',
   });
-  const [applicationResult, setApplicationResult] = useState<unknown>(null);
-  const [applicationStatus, setApplicationStatus] = useState('');
-  const [applicationError, setApplicationError] = useState('');
-  const [applicationLoading, setApplicationLoading] = useState(false);
 
   const [lookupApplicantId, setLookupApplicantId] = useState('');
-  const [lookupApplications, setLookupApplications] = useState<unknown>(null);
-  const [lookupStatus, setLookupStatus] = useState('');
-  const [lookupError, setLookupError] = useState('');
-  const [lookupLoading, setLookupLoading] = useState(false);
-
   const [trackApplicationId, setTrackApplicationId] = useState('');
-  const [trackApplicationResult, setTrackApplicationResult] = useState<unknown>(null);
-  const [trackApplicationStatus, setTrackApplicationStatus] = useState('');
-  const [trackApplicationError, setTrackApplicationError] = useState('');
-  const [trackApplicationLoading, setTrackApplicationLoading] = useState(false);
+  const [timelineApplicationId, setTimelineApplicationId] = useState('');
 
   const [documentForm, setDocumentForm] = useState({
     application_id: '',
@@ -90,20 +150,12 @@ function App() {
     filename: '',
     uploaded_by_applicant_id: '',
   });
-  const [documentResult, setDocumentResult] = useState<unknown>(null);
-  const [documentStatus, setDocumentStatus] = useState('');
-  const [documentError, setDocumentError] = useState('');
-  const [documentLoading, setDocumentLoading] = useState(false);
 
   const [commentForm, setCommentForm] = useState({
     application_id: '',
     applicant_id: '',
     comment_text: '',
   });
-  const [commentResult, setCommentResult] = useState<unknown>(null);
-  const [commentStatus, setCommentStatus] = useState('');
-  const [commentError, setCommentError] = useState('');
-  const [commentLoading, setCommentLoading] = useState(false);
 
   const [objectionForm, setObjectionForm] = useState({
     application_id: '',
@@ -111,27 +163,59 @@ function App() {
     reason: '',
     supporting_document_filename: '',
   });
-  const [objectionResult, setObjectionResult] = useState<unknown>(null);
-  const [objectionStatus, setObjectionStatus] = useState('');
-  const [objectionError, setObjectionError] = useState('');
-  const [objectionLoading, setObjectionLoading] = useState(false);
 
-  const [timelineApplicationId, setTimelineApplicationId] = useState('');
-  const [timelineResult, setTimelineResult] = useState<unknown>(null);
-  const [timelineStatus, setTimelineStatus] = useState('');
-  const [timelineError, setTimelineError] = useState('');
-  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [staffForm, setStaffForm] = useState({
+    staff_code: 'SURV-RM-01',
+    name: 'Survey Team A',
+    role: 'surveyor' as StaffRole,
+    department: 'Cadastral Survey',
+    skills: 'boundary_survey, parcel_subdivision, gps_mapping',
+    zone_ids: 'ZONE-RM-01, ZONE-RM-02',
+    max_tasks: '10',
+    phone: '+970599111111',
+    email: 'survey_a@example.com',
+  });
 
-  const activeLabel = useMemo(() => tabs.find((tab) => tab.key === activeTab)?.label ?? '', [activeTab]);
+  const [staffListFilters, setStaffListFilters] = useState({ role: '' as '' | StaffRole, active: 'true' });
+  const [taskFilters, setTaskFilters] = useState({ surveyor_id: '', application_id: '', status: '' });
+
+  const [assignForm, setAssignForm] = useState({
+    application_id: '',
+    required_skill: 'boundary_survey',
+    priority: 'normal' as 'low' | 'normal' | 'high' | 'urgent',
+  });
+
+  const [milestoneForm, setMilestoneForm] = useState({
+    application_id: '',
+    by_staff_id: '',
+    milestone: 'visit_scheduled' as SurveyMilestone,
+    scheduled_visit_date: '',
+    notes: '',
+  });
+
+  const [reportForm, setReportForm] = useState({
+    application_id: '',
+    report_title: 'Boundary Survey Report',
+    uploaded_by_staff_id: '',
+    file_name: 'survey-report.pdf',
+    file_url: '',
+    summary: '',
+    findings: '',
+  });
+
+  const [reviewForm, setReviewForm] = useState({
+    application_id: '',
+    registrar_staff_id: '',
+    decision: 'accepted' as RegistrarDecision,
+    notes: '',
+  });
 
   async function handleApplicantSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setApplicantLoading(true);
-    setApplicantError('');
-    setApplicantStatus('Creating applicant...');
+    startAction('Creating applicant...');
 
     try {
-      const result = await createApplicant({
+      const created = await createApplicant({
         full_name: applicantForm.full_name,
         applicant_type: applicantForm.applicant_type,
         national_id: applicantForm.national_id || undefined,
@@ -143,25 +227,18 @@ function App() {
         preferred_language: applicantForm.preferred_language,
         notification_method: applicantForm.notification_method,
       });
-
-      setApplicantResult(result);
-      setApplicantStatus(`Applicant created: ${result.id}`);
+      finishAction('Created applicant', created, `Applicant created: ${created.id}`);
     } catch (error) {
-      setApplicantError(error instanceof Error ? error.message : 'Unable to create applicant');
-      setApplicantStatus('');
-    } finally {
-      setApplicantLoading(false);
+      failAction(error, 'Unable to create applicant');
     }
   }
 
   async function handleApplicationSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setApplicationLoading(true);
-    setApplicationError('');
-    setApplicationStatus('Submitting application...');
+    startAction('Submitting application...');
 
     try {
-      const result = await createApplication({
+      const created = await createApplication({
         applicant_id: applicationForm.applicant_id,
         application_type: applicationForm.application_type,
         parcel_number: applicationForm.parcel_number,
@@ -170,137 +247,214 @@ function App() {
         zone_id: applicationForm.zone_id,
         description: applicationForm.description || undefined,
       });
-
-      setApplicationResult(result);
-      setApplicationStatus(`Application submitted: ${result.id}`);
+      finishAction('Created application', created, `Application submitted: ${created.id}`);
     } catch (error) {
-      setApplicationError(error instanceof Error ? error.message : 'Unable to submit application');
-      setApplicationStatus('');
-    } finally {
-      setApplicationLoading(false);
+      failAction(error, 'Unable to submit application');
     }
   }
 
   async function handleApplicationsLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLookupLoading(true);
-    setLookupError('');
-    setLookupStatus('Loading applications...');
+    startAction('Loading applications...');
 
     try {
       await getApplicant(lookupApplicantId);
-      const result = await listApplications(lookupApplicantId);
-      setLookupApplications(result);
-      setLookupStatus(`Loaded ${result.length} applications`);
+      const applications = await listApplications(lookupApplicantId);
+      finishAction('Applications', applications, `Loaded ${applications.length} applications`);
     } catch (error) {
-      setLookupError(error instanceof Error ? error.message : 'Unable to load applications');
-      setLookupStatus('');
-    } finally {
-      setLookupLoading(false);
+      failAction(error, 'Unable to load applications');
     }
   }
 
   async function handleTrackApplication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setTrackApplicationLoading(true);
-    setTrackApplicationError('');
-    setTrackApplicationStatus('Loading application...');
+    startAction('Loading application...');
 
     try {
-      const result = await getApplication(trackApplicationId);
-      setTrackApplicationResult(result);
-      setTrackApplicationStatus(`Loaded application ${result.id}`);
+      const application = await getApplication(trackApplicationId);
+      finishAction('Application details', application, `Loaded application ${application.id}`);
     } catch (error) {
-      setTrackApplicationError(error instanceof Error ? error.message : 'Unable to load application');
-      setTrackApplicationStatus('');
-    } finally {
-      setTrackApplicationLoading(false);
+      failAction(error, 'Unable to load application');
     }
   }
 
   async function handleDocumentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setDocumentLoading(true);
-    setDocumentError('');
-    setDocumentStatus('Uploading metadata...');
+    startAction('Saving document metadata...');
 
     try {
-      const result = await addDocument(documentForm.application_id, {
+      const document = await addDocument(documentForm.application_id, {
         document_type: documentForm.document_type,
         filename: documentForm.filename,
         uploaded_by_applicant_id: documentForm.uploaded_by_applicant_id,
       });
-
-      setDocumentResult(result);
-      setDocumentStatus(`Document metadata added: ${result.id}`);
+      finishAction('Document record', document, `Document metadata added: ${document.id}`);
     } catch (error) {
-      setDocumentError(error instanceof Error ? error.message : 'Unable to add document');
-      setDocumentStatus('');
-    } finally {
-      setDocumentLoading(false);
+      failAction(error, 'Unable to add document');
     }
   }
 
   async function handleCommentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setCommentLoading(true);
-    setCommentError('');
-    setCommentStatus('Adding comment...');
+    startAction('Saving comment...');
 
     try {
-      const result = await addComment(commentForm.application_id, {
+      const comment = await addComment(commentForm.application_id, {
         applicant_id: commentForm.applicant_id,
         comment_text: commentForm.comment_text,
       });
-
-      setCommentResult(result);
-      setCommentStatus(`Comment saved: ${result.id}`);
+      finishAction('Comment record', comment, `Comment saved: ${comment.id}`);
     } catch (error) {
-      setCommentError(error instanceof Error ? error.message : 'Unable to add comment');
-      setCommentStatus('');
-    } finally {
-      setCommentLoading(false);
+      failAction(error, 'Unable to add comment');
     }
   }
 
   async function handleObjectionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setObjectionLoading(true);
-    setObjectionError('');
-    setObjectionStatus('Submitting objection...');
+    startAction('Submitting objection...');
 
     try {
-      const result = await addObjection(objectionForm.application_id, {
+      const objection = await addObjection(objectionForm.application_id, {
         applicant_id: objectionForm.applicant_id,
         reason: objectionForm.reason,
         supporting_document_filename: objectionForm.supporting_document_filename || undefined,
       });
-
-      setObjectionResult(result);
-      setObjectionStatus(`Objection submitted: ${result.id}`);
+      finishAction('Objection record', objection, `Objection submitted: ${objection.id}`);
     } catch (error) {
-      setObjectionError(error instanceof Error ? error.message : 'Unable to submit objection');
-      setObjectionStatus('');
-    } finally {
-      setObjectionLoading(false);
+      failAction(error, 'Unable to submit objection');
     }
   }
 
   async function handleTimelineSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setTimelineLoading(true);
-    setTimelineError('');
-    setTimelineStatus('Loading timeline...');
+    startAction('Loading timeline...');
 
     try {
-      const result = await getTimeline(timelineApplicationId);
-      setTimelineResult(result);
-      setTimelineStatus(`Loaded ${result.length} timeline events`);
+      const events = await getTimeline(timelineApplicationId);
+      finishAction('Timeline events', events, `Loaded ${events.length} timeline events`);
     } catch (error) {
-      setTimelineError(error instanceof Error ? error.message : 'Unable to load timeline');
-      setTimelineStatus('');
-    } finally {
-      setTimelineLoading(false);
+      failAction(error, 'Unable to load timeline');
+    }
+  }
+
+  async function handleStaffSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Creating staff member...');
+
+    try {
+      const staff = await createStaff({
+        staff_code: staffForm.staff_code,
+        name: staffForm.name,
+        role: staffForm.role,
+        department: staffForm.department || undefined,
+        skills: splitCsv(staffForm.skills),
+        zone_ids: splitCsv(staffForm.zone_ids),
+        max_tasks: Number(staffForm.max_tasks || 10),
+        phone: staffForm.phone || undefined,
+        email: staffForm.email || undefined,
+        active: true,
+      });
+      finishAction('Created staff member', staff, `Staff created: ${staff.id}`);
+    } catch (error) {
+      failAction(error, 'Unable to create staff member');
+    }
+  }
+
+  async function handleStaffList(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Loading staff...');
+
+    try {
+      const staff = await listStaff({
+        role: staffListFilters.role || undefined,
+        active: staffListFilters.active === '' ? undefined : staffListFilters.active === 'true',
+      });
+      finishAction('Staff members', staff, `Loaded ${staff.length} staff members`);
+    } catch (error) {
+      failAction(error, 'Unable to load staff members');
+    }
+  }
+
+  async function handleTaskList(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Loading survey tasks...');
+
+    try {
+      const tasks = await listSurveyTasks({
+        surveyor_id: taskFilters.surveyor_id || undefined,
+        application_id: taskFilters.application_id || undefined,
+        status: taskFilters.status || undefined,
+      });
+      finishAction('Survey tasks', tasks, `Loaded ${tasks.length} survey tasks`);
+    } catch (error) {
+      failAction(error, 'Unable to load survey tasks');
+    }
+  }
+
+  async function handleAutoAssign(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Assigning surveyor...');
+
+    try {
+      const assigned = await autoAssignSurveyor(assignForm.application_id, {
+        required_skill: assignForm.required_skill || undefined,
+        priority: assignForm.priority,
+      });
+      finishAction('Auto assignment result', assigned, assigned.message);
+    } catch (error) {
+      failAction(error, 'Unable to auto-assign surveyor');
+    }
+  }
+
+  async function handleMilestoneSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Updating survey milestone...');
+
+    try {
+      const task = await updateSurveyMilestone(milestoneForm.application_id, {
+        milestone: milestoneForm.milestone,
+        by_staff_id: milestoneForm.by_staff_id,
+        scheduled_visit_date: milestoneForm.scheduled_visit_date || undefined,
+        notes: milestoneForm.notes || undefined,
+      });
+      finishAction('Updated survey task', task, `Milestone saved: ${task.status}`);
+    } catch (error) {
+      failAction(error, 'Unable to update survey milestone');
+    }
+  }
+
+  async function handleReportSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Uploading survey report metadata...');
+
+    try {
+      const report = await uploadSurveyReport(reportForm.application_id, {
+        report_title: reportForm.report_title,
+        uploaded_by_staff_id: reportForm.uploaded_by_staff_id,
+        file_name: reportForm.file_name || undefined,
+        file_url: reportForm.file_url || undefined,
+        summary: reportForm.summary || undefined,
+        findings: reportForm.findings || undefined,
+      });
+      finishAction('Survey report', report, `Survey report uploaded: ${report.id}`);
+    } catch (error) {
+      failAction(error, 'Unable to upload survey report metadata');
+    }
+  }
+
+  async function handleRegistrarReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startAction('Saving registrar review...');
+
+    try {
+      const task = await registrarReview(reviewForm.application_id, {
+        registrar_staff_id: reviewForm.registrar_staff_id,
+        decision: reviewForm.decision,
+        notes: reviewForm.notes || undefined,
+      });
+      finishAction('Registrar review result', task, `Registrar review saved: ${task.status}`);
+    } catch (error) {
+      failAction(error, 'Unable to save registrar review');
     }
   }
 
@@ -309,6 +463,7 @@ function App() {
       <header className="hero">
         <div>
           <h1>LRMIS - Land Registration Management Information System</h1>
+          <p>Applicant Portal + Student 3 Surveyors, Registrar, and Assignment module</p>
         </div>
         <div className="hero-card">
           <span>Active view</span>
@@ -321,6 +476,7 @@ function App() {
       <nav className="tab-bar">
         {tabs.map((tab) => (
           <button key={tab.key} type="button" className={tab.key === activeTab ? 'tab active' : 'tab'} onClick={() => setActiveTab(tab.key)}>
+            <small>{tab.group}</small>
             {tab.label}
           </button>
         ))}
@@ -330,62 +486,18 @@ function App() {
         <section className="card">
           <h2>Create Applicant</h2>
           <form className="grid-form" onSubmit={handleApplicantSubmit}>
-            <label>
-              Full name
-              <input value={applicantForm.full_name} onChange={(event) => setApplicantForm({ ...applicantForm, full_name: event.target.value })} required />
-            </label>
-            <label>
-              Applicant type
-              <select value={applicantForm.applicant_type} onChange={(event) => setApplicantForm({ ...applicantForm, applicant_type: event.target.value as ApplicantType })}>
-                {applicantTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              National ID
-              <input value={applicantForm.national_id} onChange={(event) => setApplicantForm({ ...applicantForm, national_id: event.target.value })} />
-            </label>
-            <label>
-              Registration number
-              <input value={applicantForm.registration_number} onChange={(event) => setApplicantForm({ ...applicantForm, registration_number: event.target.value })} />
-            </label>
-            <label>
-              Email
-              <input type="email" value={applicantForm.email} onChange={(event) => setApplicantForm({ ...applicantForm, email: event.target.value })} required />
-            </label>
-            <label>
-              Phone
-              <input value={applicantForm.phone} onChange={(event) => setApplicantForm({ ...applicantForm, phone: event.target.value })} required />
-            </label>
-            <label>
-              City
-              <input value={applicantForm.city} onChange={(event) => setApplicantForm({ ...applicantForm, city: event.target.value })} required />
-            </label>
-            <label>
-              Zone ID
-              <input value={applicantForm.zone_id} onChange={(event) => setApplicantForm({ ...applicantForm, zone_id: event.target.value })} />
-            </label>
-            <label>
-              Preferred language
-              <input value={applicantForm.preferred_language} onChange={(event) => setApplicantForm({ ...applicantForm, preferred_language: event.target.value })} />
-            </label>
-            <label>
-              Notification method
-              <select value={applicantForm.notification_method} onChange={(event) => setApplicantForm({ ...applicantForm, notification_method: event.target.value as 'email' | 'sms' })}>
-                <option value="email">email</option>
-                <option value="sms">sms</option>
-              </select>
-            </label>
-            <button type="submit" disabled={applicantLoading}>
-              {applicantLoading ? 'Saving...' : 'Create applicant'}
-            </button>
+            <label>Full name<input value={applicantForm.full_name} onChange={(event) => setApplicantForm({ ...applicantForm, full_name: event.target.value })} required /></label>
+            <label>Applicant type<select value={applicantForm.applicant_type} onChange={(event) => setApplicantForm({ ...applicantForm, applicant_type: event.target.value as ApplicantType })}>{applicantTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+            <label>National ID<input value={applicantForm.national_id} onChange={(event) => setApplicantForm({ ...applicantForm, national_id: event.target.value })} /></label>
+            <label>Registration number<input value={applicantForm.registration_number} onChange={(event) => setApplicantForm({ ...applicantForm, registration_number: event.target.value })} /></label>
+            <label>Email<input type="email" value={applicantForm.email} onChange={(event) => setApplicantForm({ ...applicantForm, email: event.target.value })} required /></label>
+            <label>Phone<input value={applicantForm.phone} onChange={(event) => setApplicantForm({ ...applicantForm, phone: event.target.value })} required /></label>
+            <label>City<input value={applicantForm.city} onChange={(event) => setApplicantForm({ ...applicantForm, city: event.target.value })} required /></label>
+            <label>Zone ID<input value={applicantForm.zone_id} onChange={(event) => setApplicantForm({ ...applicantForm, zone_id: event.target.value })} /></label>
+            <label>Preferred language<input value={applicantForm.preferred_language} onChange={(event) => setApplicantForm({ ...applicantForm, preferred_language: event.target.value })} /></label>
+            <label>Notification method<select value={applicantForm.notification_method} onChange={(event) => setApplicantForm({ ...applicantForm, notification_method: event.target.value as 'email' | 'sms' })}><option value="email">email</option><option value="sms">sms</option></select></label>
+            <button type="submit" disabled={loading}>Create applicant</button>
           </form>
-          {applicantStatus && <p className="status">{applicantStatus}</p>}
-          {applicantError && <p className="error">{applicantError}</p>}
-          <JsonBlock title="Created applicant" value={applicantResult} />
         </section>
       )}
 
@@ -393,47 +505,15 @@ function App() {
         <section className="card">
           <h2>Submit Application</h2>
           <form className="grid-form" onSubmit={handleApplicationSubmit}>
-            <label>
-              Applicant ID
-              <input value={applicationForm.applicant_id} onChange={(event) => setApplicationForm({ ...applicationForm, applicant_id: event.target.value })} required />
-            </label>
-            <label>
-              Application type
-              <select value={applicationForm.application_type} onChange={(event) => setApplicationForm({ ...applicationForm, application_type: event.target.value as ApplicationType })}>
-                {applicationTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Parcel number
-              <input value={applicationForm.parcel_number} onChange={(event) => setApplicationForm({ ...applicationForm, parcel_number: event.target.value })} required />
-            </label>
-            <label>
-              Block number
-              <input value={applicationForm.block_number} onChange={(event) => setApplicationForm({ ...applicationForm, block_number: event.target.value })} required />
-            </label>
-            <label>
-              Basin number
-              <input value={applicationForm.basin_number} onChange={(event) => setApplicationForm({ ...applicationForm, basin_number: event.target.value })} required />
-            </label>
-            <label>
-              Zone ID
-              <input value={applicationForm.zone_id} onChange={(event) => setApplicationForm({ ...applicationForm, zone_id: event.target.value })} required />
-            </label>
-            <label className="full-width">
-              Description
-              <textarea value={applicationForm.description} onChange={(event) => setApplicationForm({ ...applicationForm, description: event.target.value })} rows={4} />
-            </label>
-            <button type="submit" disabled={applicationLoading}>
-              {applicationLoading ? 'Submitting...' : 'Submit application'}
-            </button>
+            <label>Applicant ID<input value={applicationForm.applicant_id} onChange={(event) => setApplicationForm({ ...applicationForm, applicant_id: event.target.value })} required /></label>
+            <label>Application type<select value={applicationForm.application_type} onChange={(event) => setApplicationForm({ ...applicationForm, application_type: event.target.value as ApplicationType })}>{applicationTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+            <label>Parcel number<input value={applicationForm.parcel_number} onChange={(event) => setApplicationForm({ ...applicationForm, parcel_number: event.target.value })} required /></label>
+            <label>Block number<input value={applicationForm.block_number} onChange={(event) => setApplicationForm({ ...applicationForm, block_number: event.target.value })} required /></label>
+            <label>Basin number<input value={applicationForm.basin_number} onChange={(event) => setApplicationForm({ ...applicationForm, basin_number: event.target.value })} required /></label>
+            <label>Zone ID<input value={applicationForm.zone_id} onChange={(event) => setApplicationForm({ ...applicationForm, zone_id: event.target.value })} required /></label>
+            <label className="full-width">Description<textarea value={applicationForm.description} onChange={(event) => setApplicationForm({ ...applicationForm, description: event.target.value })} rows={4} /></label>
+            <button type="submit" disabled={loading}>Submit application</button>
           </form>
-          {applicationStatus && <p className="status">{applicationStatus}</p>}
-          {applicationError && <p className="error">{applicationError}</p>}
-          <JsonBlock title="Created application" value={applicationResult} />
         </section>
       )}
 
@@ -441,17 +521,9 @@ function App() {
         <section className="card">
           <h2>My Applications</h2>
           <form className="inline-form" onSubmit={handleApplicationsLookup}>
-            <label>
-              Applicant ID
-              <input value={lookupApplicantId} onChange={(event) => setLookupApplicantId(event.target.value)} required />
-            </label>
-            <button type="submit" disabled={lookupLoading}>
-              {lookupLoading ? 'Loading...' : 'Load applications'}
-            </button>
+            <label>Applicant ID<input value={lookupApplicantId} onChange={(event) => setLookupApplicantId(event.target.value)} required /></label>
+            <button type="submit" disabled={loading}>Load applications</button>
           </form>
-          {lookupStatus && <p className="status">{lookupStatus}</p>}
-          {lookupError && <p className="error">{lookupError}</p>}
-          <JsonBlock title="Applications" value={lookupApplications} />
         </section>
       )}
 
@@ -459,17 +531,9 @@ function App() {
         <section className="card">
           <h2>Track Application</h2>
           <form className="inline-form" onSubmit={handleTrackApplication}>
-            <label>
-              Application ID
-              <input value={trackApplicationId} onChange={(event) => setTrackApplicationId(event.target.value)} required />
-            </label>
-            <button type="submit" disabled={trackApplicationLoading}>
-              {trackApplicationLoading ? 'Loading...' : 'Load application'}
-            </button>
+            <label>Application ID<input value={trackApplicationId} onChange={(event) => setTrackApplicationId(event.target.value)} required /></label>
+            <button type="submit" disabled={loading}>Load application</button>
           </form>
-          {trackApplicationStatus && <p className="status">{trackApplicationStatus}</p>}
-          {trackApplicationError && <p className="error">{trackApplicationError}</p>}
-          <JsonBlock title="Application details" value={trackApplicationResult} />
         </section>
       )}
 
@@ -477,29 +541,12 @@ function App() {
         <section className="card">
           <h2>Upload Document Metadata</h2>
           <form className="grid-form" onSubmit={handleDocumentSubmit}>
-            <label>
-              Application ID
-              <input value={documentForm.application_id} onChange={(event) => setDocumentForm({ ...documentForm, application_id: event.target.value })} required />
-            </label>
-            <label>
-              Document type
-              <input value={documentForm.document_type} onChange={(event) => setDocumentForm({ ...documentForm, document_type: event.target.value })} required />
-            </label>
-            <label>
-              Filename
-              <input value={documentForm.filename} onChange={(event) => setDocumentForm({ ...documentForm, filename: event.target.value })} required />
-            </label>
-            <label>
-              Uploaded by applicant ID
-              <input value={documentForm.uploaded_by_applicant_id} onChange={(event) => setDocumentForm({ ...documentForm, uploaded_by_applicant_id: event.target.value })} required />
-            </label>
-            <button type="submit" disabled={documentLoading}>
-              {documentLoading ? 'Saving...' : 'Save document metadata'}
-            </button>
+            <label>Application ID<input value={documentForm.application_id} onChange={(event) => setDocumentForm({ ...documentForm, application_id: event.target.value })} required /></label>
+            <label>Document type<input value={documentForm.document_type} onChange={(event) => setDocumentForm({ ...documentForm, document_type: event.target.value })} required /></label>
+            <label>Filename<input value={documentForm.filename} onChange={(event) => setDocumentForm({ ...documentForm, filename: event.target.value })} required /></label>
+            <label>Uploaded by applicant ID<input value={documentForm.uploaded_by_applicant_id} onChange={(event) => setDocumentForm({ ...documentForm, uploaded_by_applicant_id: event.target.value })} required /></label>
+            <button type="submit" disabled={loading}>Save document metadata</button>
           </form>
-          {documentStatus && <p className="status">{documentStatus}</p>}
-          {documentError && <p className="error">{documentError}</p>}
-          <JsonBlock title="Document record" value={documentResult} />
         </section>
       )}
 
@@ -507,25 +554,11 @@ function App() {
         <section className="card">
           <h2>Add Comment</h2>
           <form className="grid-form" onSubmit={handleCommentSubmit}>
-            <label>
-              Application ID
-              <input value={commentForm.application_id} onChange={(event) => setCommentForm({ ...commentForm, application_id: event.target.value })} required />
-            </label>
-            <label>
-              Applicant ID
-              <input value={commentForm.applicant_id} onChange={(event) => setCommentForm({ ...commentForm, applicant_id: event.target.value })} required />
-            </label>
-            <label className="full-width">
-              Comment text
-              <textarea value={commentForm.comment_text} onChange={(event) => setCommentForm({ ...commentForm, comment_text: event.target.value })} rows={4} required />
-            </label>
-            <button type="submit" disabled={commentLoading}>
-              {commentLoading ? 'Saving...' : 'Save comment'}
-            </button>
+            <label>Application ID<input value={commentForm.application_id} onChange={(event) => setCommentForm({ ...commentForm, application_id: event.target.value })} required /></label>
+            <label>Applicant ID<input value={commentForm.applicant_id} onChange={(event) => setCommentForm({ ...commentForm, applicant_id: event.target.value })} required /></label>
+            <label className="full-width">Comment text<textarea value={commentForm.comment_text} onChange={(event) => setCommentForm({ ...commentForm, comment_text: event.target.value })} rows={4} required /></label>
+            <button type="submit" disabled={loading}>Save comment</button>
           </form>
-          {commentStatus && <p className="status">{commentStatus}</p>}
-          {commentError && <p className="error">{commentError}</p>}
-          <JsonBlock title="Comment record" value={commentResult} />
         </section>
       )}
 
@@ -533,29 +566,12 @@ function App() {
         <section className="card">
           <h2>Submit Objection</h2>
           <form className="grid-form" onSubmit={handleObjectionSubmit}>
-            <label>
-              Application ID
-              <input value={objectionForm.application_id} onChange={(event) => setObjectionForm({ ...objectionForm, application_id: event.target.value })} required />
-            </label>
-            <label>
-              Applicant ID
-              <input value={objectionForm.applicant_id} onChange={(event) => setObjectionForm({ ...objectionForm, applicant_id: event.target.value })} required />
-            </label>
-            <label className="full-width">
-              Reason
-              <textarea value={objectionForm.reason} onChange={(event) => setObjectionForm({ ...objectionForm, reason: event.target.value })} rows={4} required />
-            </label>
-            <label>
-              Supporting document filename
-              <input value={objectionForm.supporting_document_filename} onChange={(event) => setObjectionForm({ ...objectionForm, supporting_document_filename: event.target.value })} />
-            </label>
-            <button type="submit" disabled={objectionLoading}>
-              {objectionLoading ? 'Submitting...' : 'Submit objection'}
-            </button>
+            <label>Application ID<input value={objectionForm.application_id} onChange={(event) => setObjectionForm({ ...objectionForm, application_id: event.target.value })} required /></label>
+            <label>Applicant ID<input value={objectionForm.applicant_id} onChange={(event) => setObjectionForm({ ...objectionForm, applicant_id: event.target.value })} required /></label>
+            <label className="full-width">Reason<textarea value={objectionForm.reason} onChange={(event) => setObjectionForm({ ...objectionForm, reason: event.target.value })} rows={4} required /></label>
+            <label>Supporting document filename<input value={objectionForm.supporting_document_filename} onChange={(event) => setObjectionForm({ ...objectionForm, supporting_document_filename: event.target.value })} /></label>
+            <button type="submit" disabled={loading}>Submit objection</button>
           </form>
-          {objectionStatus && <p className="status">{objectionStatus}</p>}
-          {objectionError && <p className="error">{objectionError}</p>}
-          <JsonBlock title="Objection record" value={objectionResult} />
         </section>
       )}
 
@@ -563,19 +579,116 @@ function App() {
         <section className="card">
           <h2>Timeline</h2>
           <form className="inline-form" onSubmit={handleTimelineSubmit}>
-            <label>
-              Application ID
-              <input value={timelineApplicationId} onChange={(event) => setTimelineApplicationId(event.target.value)} required />
-            </label>
-            <button type="submit" disabled={timelineLoading}>
-              {timelineLoading ? 'Loading...' : 'Load timeline'}
-            </button>
+            <label>Application ID<input value={timelineApplicationId} onChange={(event) => setTimelineApplicationId(event.target.value)} required /></label>
+            <button type="submit" disabled={loading}>Load timeline</button>
           </form>
-          {timelineStatus && <p className="status">{timelineStatus}</p>}
-          {timelineError && <p className="error">{timelineError}</p>}
-          <JsonBlock title="Timeline events" value={timelineResult} />
         </section>
       )}
+
+      {activeTab === 'create-staff' && (
+        <section className="card">
+          <h2>Create Staff Member</h2>
+          <p>Create surveyors and registrar staff. Staff endpoints use the <code>x-staff-token</code> header automatically.</p>
+          <form className="grid-form" onSubmit={handleStaffSubmit}>
+            <label>Staff code<input value={staffForm.staff_code} onChange={(event) => setStaffForm({ ...staffForm, staff_code: event.target.value })} required /></label>
+            <label>Name<input value={staffForm.name} onChange={(event) => setStaffForm({ ...staffForm, name: event.target.value })} required /></label>
+            <label>Role<select value={staffForm.role} onChange={(event) => setStaffForm({ ...staffForm, role: event.target.value as StaffRole })}>{staffRoles.map((role) => <option key={role} value={role}>{role}</option>)}</select></label>
+            <label>Department<input value={staffForm.department} onChange={(event) => setStaffForm({ ...staffForm, department: event.target.value })} /></label>
+            <label className="full-width">Skills, comma separated<input value={staffForm.skills} onChange={(event) => setStaffForm({ ...staffForm, skills: event.target.value })} /></label>
+            <label className="full-width">Coverage zones, comma separated<input value={staffForm.zone_ids} onChange={(event) => setStaffForm({ ...staffForm, zone_ids: event.target.value })} /></label>
+            <label>Max active tasks<input type="number" min="1" value={staffForm.max_tasks} onChange={(event) => setStaffForm({ ...staffForm, max_tasks: event.target.value })} /></label>
+            <label>Phone<input value={staffForm.phone} onChange={(event) => setStaffForm({ ...staffForm, phone: event.target.value })} /></label>
+            <label>Email<input type="email" value={staffForm.email} onChange={(event) => setStaffForm({ ...staffForm, email: event.target.value })} /></label>
+            <button type="submit" disabled={loading}>Create staff</button>
+          </form>
+        </section>
+      )}
+
+      {activeTab === 'staff-list' && (
+        <section className="card">
+          <h2>Staff List</h2>
+          <form className="inline-form" onSubmit={handleStaffList}>
+            <label>Role<select value={staffListFilters.role} onChange={(event) => setStaffListFilters({ ...staffListFilters, role: event.target.value as '' | StaffRole })}><option value="">all</option>{staffRoles.map((role) => <option key={role} value={role}>{role}</option>)}</select></label>
+            <label>Active<select value={staffListFilters.active} onChange={(event) => setStaffListFilters({ ...staffListFilters, active: event.target.value })}><option value="">all</option><option value="true">true</option><option value="false">false</option></select></label>
+            <button type="submit" disabled={loading}>Load staff</button>
+          </form>
+        </section>
+      )}
+
+      {activeTab === 'auto-assign' && (
+        <section className="card">
+          <h2>Auto Assign Surveyor</h2>
+          <p>Needs an existing application ID and at least one active surveyor in the same zone with the required skill.</p>
+          <form className="grid-form" onSubmit={handleAutoAssign}>
+            <label>Application ID<input value={assignForm.application_id} onChange={(event) => setAssignForm({ ...assignForm, application_id: event.target.value })} required /></label>
+            <label>Required skill<input value={assignForm.required_skill} onChange={(event) => setAssignForm({ ...assignForm, required_skill: event.target.value })} /></label>
+            <label>Priority<select value={assignForm.priority} onChange={(event) => setAssignForm({ ...assignForm, priority: event.target.value as 'low' | 'normal' | 'high' | 'urgent' })}><option value="low">low</option><option value="normal">normal</option><option value="high">high</option><option value="urgent">urgent</option></select></label>
+            <button type="submit" disabled={loading}>Auto assign</button>
+          </form>
+        </section>
+      )}
+
+      {activeTab === 'survey-tasks' && (
+        <section className="card">
+          <h2>Survey Tasks</h2>
+          <form className="grid-form" onSubmit={handleTaskList}>
+            <label>Surveyor ID<input value={taskFilters.surveyor_id} onChange={(event) => setTaskFilters({ ...taskFilters, surveyor_id: event.target.value })} /></label>
+            <label>Application ID<input value={taskFilters.application_id} onChange={(event) => setTaskFilters({ ...taskFilters, application_id: event.target.value })} /></label>
+            <label>Status<input placeholder="assigned" value={taskFilters.status} onChange={(event) => setTaskFilters({ ...taskFilters, status: event.target.value })} /></label>
+            <button type="submit" disabled={loading}>Load survey tasks</button>
+          </form>
+        </section>
+      )}
+
+      {activeTab === 'survey-milestone' && (
+        <section className="card">
+          <h2>Survey Milestone</h2>
+          <p>Milestones must be done in order: visit scheduled → arrived on site → survey started → survey completed.</p>
+          <form className="grid-form" onSubmit={handleMilestoneSubmit}>
+            <label>Application ID<input value={milestoneForm.application_id} onChange={(event) => setMilestoneForm({ ...milestoneForm, application_id: event.target.value })} required /></label>
+            <label>Assigned surveyor staff ID<input value={milestoneForm.by_staff_id} onChange={(event) => setMilestoneForm({ ...milestoneForm, by_staff_id: event.target.value })} required /></label>
+            <label>Milestone<select value={milestoneForm.milestone} onChange={(event) => setMilestoneForm({ ...milestoneForm, milestone: event.target.value as SurveyMilestone })}>{milestones.map((milestone) => <option key={milestone} value={milestone}>{milestone}</option>)}</select></label>
+            <label>Scheduled visit date<input type="date" value={milestoneForm.scheduled_visit_date} onChange={(event) => setMilestoneForm({ ...milestoneForm, scheduled_visit_date: event.target.value })} /></label>
+            <label className="full-width">Notes<textarea value={milestoneForm.notes} onChange={(event) => setMilestoneForm({ ...milestoneForm, notes: event.target.value })} rows={4} /></label>
+            <button type="submit" disabled={loading}>Save milestone</button>
+          </form>
+        </section>
+      )}
+
+      {activeTab === 'survey-report' && (
+        <section className="card">
+          <h2>Survey Report Metadata</h2>
+          <p>Allowed only after the task reaches <code>survey_completed</code>.</p>
+          <form className="grid-form" onSubmit={handleReportSubmit}>
+            <label>Application ID<input value={reportForm.application_id} onChange={(event) => setReportForm({ ...reportForm, application_id: event.target.value })} required /></label>
+            <label>Uploaded by surveyor staff ID<input value={reportForm.uploaded_by_staff_id} onChange={(event) => setReportForm({ ...reportForm, uploaded_by_staff_id: event.target.value })} required /></label>
+            <label>Report title<input value={reportForm.report_title} onChange={(event) => setReportForm({ ...reportForm, report_title: event.target.value })} required /></label>
+            <label>File name<input value={reportForm.file_name} onChange={(event) => setReportForm({ ...reportForm, file_name: event.target.value })} /></label>
+            <label className="full-width">File URL<input value={reportForm.file_url} onChange={(event) => setReportForm({ ...reportForm, file_url: event.target.value })} /></label>
+            <label className="full-width">Summary<textarea value={reportForm.summary} onChange={(event) => setReportForm({ ...reportForm, summary: event.target.value })} rows={4} /></label>
+            <label className="full-width">Findings<textarea value={reportForm.findings} onChange={(event) => setReportForm({ ...reportForm, findings: event.target.value })} rows={4} /></label>
+            <button type="submit" disabled={loading}>Upload report metadata</button>
+          </form>
+        </section>
+      )}
+
+      {activeTab === 'registrar-review' && (
+        <section className="card">
+          <h2>Registrar Review</h2>
+          <p>Allowed only after a survey report is uploaded. Accepted reports move the application to legal_review.</p>
+          <form className="grid-form" onSubmit={handleRegistrarReview}>
+            <label>Application ID<input value={reviewForm.application_id} onChange={(event) => setReviewForm({ ...reviewForm, application_id: event.target.value })} required /></label>
+            <label>Registrar staff ID<input value={reviewForm.registrar_staff_id} onChange={(event) => setReviewForm({ ...reviewForm, registrar_staff_id: event.target.value })} required /></label>
+            <label>Decision<select value={reviewForm.decision} onChange={(event) => setReviewForm({ ...reviewForm, decision: event.target.value as RegistrarDecision })}>{registrarDecisions.map((decision) => <option key={decision} value={decision}>{decision}</option>)}</select></label>
+            <label className="full-width">Notes<textarea value={reviewForm.notes} onChange={(event) => setReviewForm({ ...reviewForm, notes: event.target.value })} rows={4} /></label>
+            <button type="submit" disabled={loading}>Save registrar review</button>
+          </form>
+        </section>
+      )}
+
+      {statusMessage && <p className="status">{loading ? `${statusMessage}` : statusMessage}</p>}
+      {errorMessage && <p className="error">{errorMessage}</p>}
+      <JsonBlock title={resultTitle} value={result} />
     </div>
   );
 }

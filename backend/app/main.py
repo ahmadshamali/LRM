@@ -2,12 +2,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .db import get_client, get_db
 from .routes import router
 
 
 load_dotenv()
 
-app = FastAPI(title="LRMIS Applicant Portal API", version="1.0.0")
+app = FastAPI(title="LRMIS Applicant Portal API", version="1.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,4 +23,15 @@ app.include_router(router)
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"message": "LRMIS Applicant Portal API is running"}
+    return {"message": "LRMIS API is running"}
+
+
+@app.get("/health/db")
+def database_health():
+    get_client().admin.command("ping")
+    db = get_db()
+    return {
+        "mongodb_connected": True,
+        "database": db.name,
+        "collections": db.list_collection_names(),
+    }

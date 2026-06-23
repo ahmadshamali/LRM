@@ -35,6 +35,10 @@ export interface Application {
   status: string;
   created_at: string;
   updated_at: string;
+  assignment?: {
+    assigned_surveyor_id?: string | null;
+    assignment_policy?: string | null;
+  };
 }
 
 export interface DocumentRecord {
@@ -70,4 +74,85 @@ export interface TimelineEvent {
   title: string;
   timestamp: string;
   details: Record<string, unknown>;
+}
+
+export type StaffRole = 'surveyor' | 'registrar';
+export type SurveyMilestone = 'visit_scheduled' | 'arrived_on_site' | 'survey_started' | 'survey_completed';
+export type RegistrarDecision = 'accepted' | 'rejected' | 'needs_revision';
+
+export interface StaffMember {
+  id: string;
+  staff_code: string;
+  name: string;
+  role: StaffRole;
+  department?: string | null;
+  skills: string[];
+  coverage: {
+    zone_ids: string[];
+  };
+  schedule: {
+    timezone: string;
+    shifts: unknown[];
+    on_call: boolean;
+  };
+  workload: {
+    active_tasks: number;
+    max_tasks: number;
+  };
+  contacts: {
+    phone?: string | null;
+    email?: string | null;
+  };
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  performance_summary?: {
+    active_survey_tasks: number;
+    completed_survey_tasks: number;
+    uploaded_reports: number;
+  };
+}
+
+export interface SurveyTask {
+  id: string;
+  task_id: string;
+  application_id: string;
+  parcel_number?: string | null;
+  zone_id: string;
+  assigned_surveyor_id: string;
+  status: string;
+  priority: string;
+  milestones: Array<{
+    type: string;
+    at: string;
+    by: string;
+    meta: Record<string, unknown>;
+  }>;
+  field_notes: Array<Record<string, unknown>>;
+  report_uploaded: boolean;
+  registrar_review?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SurveyReport {
+  id: string;
+  application_id: string;
+  survey_task_id: string;
+  uploaded_by_staff_id: string;
+  assigned_surveyor_id: string;
+  report_title: string;
+  file_name?: string | null;
+  file_url?: string | null;
+  summary?: string | null;
+  findings?: string | null;
+  status: string;
+  uploaded_at: string;
+  review?: Record<string, unknown> | null;
+}
+
+export interface AutoAssignResponse {
+  message: string;
+  assigned_surveyor: StaffMember;
+  survey_task: SurveyTask;
 }

@@ -3,13 +3,21 @@ import type {
   Application,
   ApplicationType,
   ApplicantType,
+  AutoAssignResponse,
   CommentRecord,
   DocumentRecord,
   ObjectionRecord,
+  RegistrarDecision,
+  StaffMember,
+  StaffRole,
+  SurveyMilestone,
+  SurveyReport,
+  SurveyTask,
   TimelineEvent,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const STAFF_TOKEN = import.meta.env.VITE_STAFF_TOKEN ?? 'staff-secret';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -34,6 +42,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   return data as T;
+}
+
+function staffHeaders(): HeadersInit {
+  return { 'x-staff-token': STAFF_TOKEN };
 }
 
 export function createApplicant(payload: {
@@ -137,4 +149,114 @@ export function addObjection(applicationId: string, payload: {
 
 export function getTimeline(applicationId: string): Promise<TimelineEvent[]> {
   return request<TimelineEvent[]>(`/applications/${applicationId}/timeline`);
+}
+
+
+//habeeb's work
+
+
+export function createStaff(payload: {
+  staff_code: string;
+  name: string;
+  role: StaffRole;
+  department?: string;
+  skills: string[];
+  zone_ids: string[];
+  max_tasks: number;
+  phone?: string;
+  email?: string;
+  active?: boolean;
+}): Promise<StaffMember> {
+  return request<StaffMember>('/staff', {
+    method: 'POST',
+    headers: staffHeaders(),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listStaff(filters: { role?: StaffRole; active?: boolean } = {}): Promise<StaffMember[]> {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      params.set(key, String(value));
+    }
+  });
+  const query = params.toString();
+  return request<StaffMember[]>(`/staff${query ? `?${query}` : ''}`, {
+    headers: staffHeaders(),
+  });
+}
+
+export function getStaff(staffId: string): Promise<StaffMember> {
+  return request<StaffMember>(`/staff/${staffId}`, {
+    headers: staffHeaders(),
+  });
+}
+
+export function listSurveyTasks(filters: {
+  surveyor_id?: string;
+  application_id?: string;
+  status?: string;
+} = {}): Promise<SurveyTask[]> {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      params.set(key, String(value));
+    }
+  });
+  const query = params.toString();
+  return request<SurveyTask[]>(`/survey-tasks${query ? `?${query}` : ''}`, {
+    headers: staffHeaders(),
+  });
+}
+
+export function autoAssignSurveyor(applicationId: string, payload: {
+  required_skill?: string;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+}): Promise<AutoAssignResponse> {
+  return request<AutoAssignResponse>(`/applications/${applicationId}/auto-assign-surveyor`, {
+    method: 'POST',
+    headers: staffHeaders(),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSurveyMilestone(applicationId: string, payload: {
+  milestone: SurveyMilestone;
+  by_staff_id: string;
+  scheduled_visit_date?: string;
+  notes?: string;
+}): Promise<SurveyTask> {
+  return request<SurveyTask>(`/applications/${applicationId}/survey-milestone`, {
+    method: 'PATCH',
+    headers: staffHeaders(),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function uploadSurveyReport(applicationId: string, payload: {
+  report_title: string;
+  uploaded_by_staff_id: string;
+  file_name?: string;
+  file_url?: string;
+  summary?: string;
+  findings?: string;
+}): Promise<SurveyReport> {
+  return request<SurveyReport>(`/applications/${applicationId}/survey-report`, {
+    method: 'POST',
+    headers: staffHeaders(),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function registrarReview(applicationId: string, payload: {
+  registrar_staff_id: string;
+  decision: RegistrarDecision;
+  notes?: string;
+}): Promise<SurveyTask> {
+  return request<SurveyTask>(`/applications/${applicationId}/registrar-review`, {
+    method: 'PATCH',
+    headers: staffHeaders(),
+    body: JSON.stringify(payload),
+  });
 }

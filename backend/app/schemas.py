@@ -15,6 +15,15 @@ ApplicationType = Literal[
     "certificate_request",
 ]
 
+StaffRole = Literal["surveyor", "registrar"]
+SurveyMilestone = Literal[
+    "visit_scheduled",
+    "arrived_on_site",
+    "survey_started",
+    "survey_completed",
+]
+RegistrarDecision = Literal["accepted", "rejected", "needs_revision"]
+
 
 class ApplicantCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -80,3 +89,58 @@ class TimelineEvent(BaseModel):
     title: str
     timestamp: str
     details: dict
+
+
+# -----------------------------
+# Student 3: Surveyors, Registrar, and Assignment
+# -----------------------------
+
+
+class StaffCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    staff_code: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    role: StaffRole
+    department: Optional[str] = None
+    skills: list[str] = Field(default_factory=list)
+    zone_ids: list[str] = Field(default_factory=list)
+    max_tasks: int = Field(default=10, ge=1, le=100)
+    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+    active: bool = True
+
+
+class AutoAssignSurveyorRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    required_skill: Optional[str] = "boundary_survey"
+    priority: Literal["low", "normal", "high", "urgent"] = "normal"
+
+
+class SurveyMilestoneUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    milestone: SurveyMilestone
+    by_staff_id: str = Field(min_length=1)
+    scheduled_visit_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SurveyReportCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    report_title: str = Field(min_length=1)
+    uploaded_by_staff_id: str = Field(min_length=1)
+    file_name: Optional[str] = None
+    file_url: Optional[str] = None
+    summary: Optional[str] = None
+    findings: Optional[str] = None
+
+
+class RegistrarReviewCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    registrar_staff_id: str = Field(min_length=1)
+    decision: RegistrarDecision
+    notes: Optional[str] = None
