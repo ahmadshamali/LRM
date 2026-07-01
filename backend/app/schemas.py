@@ -47,6 +47,35 @@ class ApplicantCreate(BaseModel):
         return self
 
 
+class AccountRegister(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    full_name: str = Field(min_length=1)
+    applicant_type: ApplicantType
+    national_id: Optional[str] = None
+    registration_number: Optional[str] = None
+    email: EmailStr
+    phone: str = Field(min_length=1)
+    city: str = Field(min_length=1)
+    zone_id: Optional[str] = None
+    preferred_language: str = Field(default="en", min_length=1)
+    notification_method: NotificationMethod = "email"
+    password: str = Field(min_length=8)
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> "AccountRegister":
+        if not self.national_id and not self.registration_number:
+            raise ValueError("Either national_id or registration_number must be provided")
+        return self
+
+
+class AccountLogin(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    email: EmailStr
+    password: str = Field(min_length=1)
+
+
 class ApplicationCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 

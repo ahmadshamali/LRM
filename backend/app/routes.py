@@ -1,4 +1,8 @@
-﻿import os
+﻿import hashlib
+import hmac
+import os
+import secrets
+from datetime import timedelta
 from typing import Literal, Optional
 
 from bson import ObjectId
@@ -6,6 +10,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from .db import get_db
 from .schemas import (
+    AccountLogin,
+    AccountRegister,
     ApplicantCreate,
     ApplicationCreate,
     AutoAssignSurveyorRequest,
@@ -50,6 +56,8 @@ def get_collections():
         "survey_tasks": db["survey_tasks"],
         "survey_reports": db["survey_reports"],
         "performance_logs": db["performance_logs"],
+        "accounts": db["accounts"],
+        "account_sessions": db["account_sessions"],
     }
 
 
@@ -60,6 +68,85 @@ def require_staff_access(x_staff_token: Optional[str] = Header(default=None)) ->
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Staff access required. Send x-staff-token header.",
         )
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def hash_password(password: str) -> str:
+    iterations = 210_000
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
+    return f"pbkdf2_sha256${iterations}${salt}${digest.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt, expected = stored_hash.split("$", 3)
+        iterations = int(iterations_text)
+    except ValueError:
+        return False
+
+    if algorithm != "pbkdf2_sha256":
+        return False
+
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
+    return hmac.compare_digest(digest.hex(), expected)
+
+
+def create_session(collections, account_id: ObjectId) -> str:
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = utc_now()
+    collections["account_sessions"].insert_one(
+        {
+            "account_id": account_id,
+            "token_hash": token_hash,
+            "created_at": now,
+            "expires_at": now + timedelta(days=14),
+        }
+    )
+    return raw_token
+
+
+def public_account(account) -> dict:
+    return {
+        "id": str(account["_id"]),
+        "email": account["email"],
+        "applicant_id": str(account["applicant_id"]),
+        "created_at": account["created_at"].isoformat(),
+        "last_login_at": account.get("last_login_at").isoformat() if account.get("last_login_at") else None,
+    }
+
+
+def session_payload(collections, account, token: str) -> dict:
+    applicant = fetch_applicant_or_404(collections["applicants"], str(account["applicant_id"]))
+    return {
+        "token": token,
+        "account": public_account(account),
+        "applicant": serialize_document(applicant),
+    }
+
+
+def get_current_account(
+    authorization: Optional[str] = Header(default=None),
+    collections=Depends(get_collections),
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in required")
+
+    token = authorization.removeprefix("Bearer ").strip()
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    session = collections["account_sessions"].find_one({"token_hash": token_hash})
+    if not session or session.get("expires_at") <= utc_now():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired. Please sign in again.")
+
+    account = collections["accounts"].find_one({"_id": session["account_id"]})
+    if not account:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account not found")
+
+    return account
 
 
 def add_performance_event(
@@ -138,6 +225,63 @@ def ensure_application_owner(application, applicant_id: str) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Applicant does not own this application",
         )
+
+
+@router.post("/auth/register", status_code=status.HTTP_201_CREATED)
+def register_account(payload: AccountRegister, collections=Depends(get_collections)):
+    email = normalize_email(str(payload.email))
+    existing_account = collections["accounts"].find_one({"email": email})
+    if existing_account:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account already exists for this email")
+
+    applicant_document = payload.model_dump(exclude={"password"})
+    applicant_document["email"] = email
+    applicant_document["verification_state"] = "unverified"
+    applicant_document["created_at"] = utc_now()
+    applicant_result = collections["applicants"].insert_one(applicant_document)
+
+    now = utc_now()
+    account_document = {
+        "email": email,
+        "applicant_id": applicant_result.inserted_id,
+        "password_hash": hash_password(payload.password),
+        "created_at": now,
+        "last_login_at": now,
+    }
+    account_result = collections["accounts"].insert_one(account_document)
+    account = collections["accounts"].find_one({"_id": account_result.inserted_id})
+    token = create_session(collections, account["_id"])
+    return session_payload(collections, account, token)
+
+
+@router.post("/auth/login")
+def login_account(payload: AccountLogin, collections=Depends(get_collections)):
+    email = normalize_email(str(payload.email))
+    account = collections["accounts"].find_one({"email": email})
+    if not account or not verify_password(payload.password, account.get("password_hash", "")):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    collections["accounts"].update_one({"_id": account["_id"]}, {"$set": {"last_login_at": utc_now()}})
+    account = collections["accounts"].find_one({"_id": account["_id"]})
+    token = create_session(collections, account["_id"])
+    return session_payload(collections, account, token)
+
+
+@router.get("/auth/me")
+def get_authenticated_account(account=Depends(get_current_account), collections=Depends(get_collections)):
+    return session_payload(collections, account, "")
+
+
+@router.post("/auth/logout")
+def logout_account(
+    authorization: Optional[str] = Header(default=None),
+    collections=Depends(get_collections),
+):
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        collections["account_sessions"].delete_one({"token_hash": token_hash})
+    return {"message": "Signed out"}
 
 
 @router.post("/applicants", status_code=status.HTTP_201_CREATED)

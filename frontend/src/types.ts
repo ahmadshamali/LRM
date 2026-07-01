@@ -23,6 +23,20 @@ export interface Applicant {
   created_at: string;
 }
 
+export interface Account {
+  id: string;
+  email: string;
+  applicant_id: string;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export interface AuthSession {
+  token: string;
+  account: Account;
+  applicant: Applicant;
+}
+
 export interface Application {
   id: string;
   applicant_id: string;

@@ -3,6 +3,7 @@ import type {
   Application,
   ApplicationType,
   ApplicantType,
+  AuthSession,
   AutoAssignResponse,
   CommentRecord,
   DocumentRecord,
@@ -26,12 +27,27 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 const STAFF_TOKEN = import.meta.env.VITE_STAFF_TOKEN ?? 'staff-secret';
+const AUTH_TOKEN_KEY = 'lrmis_auth_token';
+
+export function getStoredAuthToken(): string {
+  return window.localStorage.getItem(AUTH_TOKEN_KEY) ?? '';
+}
+
+export function setStoredAuthToken(token: string) {
+  if (token) {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getStoredAuthToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers ?? {}),
     },
   });
@@ -52,8 +68,52 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
+function storeSession(session: AuthSession): AuthSession {
+  const token = session.token || getStoredAuthToken();
+  setStoredAuthToken(token);
+  return { ...session, token };
+}
+
 function staffHeaders(): HeadersInit {
   return { 'x-staff-token': STAFF_TOKEN };
+}
+
+export function registerAccount(payload: {
+  full_name: string;
+  applicant_type: ApplicantType;
+  national_id?: string;
+  registration_number?: string;
+  email: string;
+  phone: string;
+  city: string;
+  zone_id?: string;
+  preferred_language?: string;
+  notification_method?: 'email' | 'sms';
+  password: string;
+}): Promise<AuthSession> {
+  return request<AuthSession>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }).then(storeSession);
+}
+
+export function loginAccount(payload: { email: string; password: string }): Promise<AuthSession> {
+  return request<AuthSession>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }).then(storeSession);
+}
+
+export function getCurrentAccount(): Promise<AuthSession> {
+  return request<AuthSession>('/auth/me').then(storeSession);
+}
+
+export async function logoutAccount(): Promise<void> {
+  try {
+    await request<{ message: string }>('/auth/logout', { method: 'POST' });
+  } finally {
+    setStoredAuthToken('');
+  }
 }
 
 export function createApplicant(payload: {

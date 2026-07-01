@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   addComment,
   addDocument,
@@ -9,18 +9,24 @@ import {
   createStaff,
   getApplication,
   getApplicant,
+  getCurrentAccount,
+  getStoredAuthToken,
   getTimeline,
   getStaff,
   listApplications,
   listSharedApplications,
   listStaff,
   listSurveyTasks,
+  loginAccount,
+  logoutAccount,
   registrarReview,
+  registerAccount,
+  setStoredAuthToken,
   updateSurveyMilestone,
   uploadSurveyReport,
 } from './api';
 import AnalyticsPage from './AnalyticsPage';
-import type { ApplicationType, ApplicantType, RegistrarDecision, StaffRole, SurveyMilestone } from './types';
+import type { ApplicationType, ApplicantType, AuthSession, RegistrarDecision, StaffRole, SurveyMilestone } from './types';
 
 type TabKey =
   | 'dashboard'
@@ -178,10 +184,135 @@ function Dashboard({ onSelect }: { onSelect: (tab: TabKey) => void }) {
   );
 }
 
+function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSession) => void }) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [accountForm, setAccountForm] = useState({
+    full_name: '',
+    applicant_type: 'citizen' as ApplicantType,
+    national_id: '',
+    registration_number: '',
+    email: '',
+    phone: '',
+    city: '',
+    zone_id: '',
+    preferred_language: 'en',
+    notification_method: 'email' as 'email' | 'sms',
+    password: '',
+    confirm_password: '',
+  });
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setErrorMessage('');
+    setStatusMessage('Signing in...');
+
+    try {
+      const session = await loginAccount(loginForm);
+      setStatusMessage('Signed in');
+      onAuthenticated(session);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in');
+      setStatusMessage('');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setErrorMessage('');
+    setStatusMessage('Creating account...');
+
+    if (accountForm.password !== accountForm.confirm_password) {
+      setLoading(false);
+      setStatusMessage('');
+      setErrorMessage('Passwords do not match');
+      return;
+    }
+
+    try {
+      const session = await registerAccount({
+        full_name: accountForm.full_name,
+        applicant_type: accountForm.applicant_type,
+        national_id: accountForm.national_id || undefined,
+        registration_number: accountForm.registration_number || undefined,
+        email: accountForm.email,
+        phone: accountForm.phone,
+        city: accountForm.city,
+        zone_id: accountForm.zone_id || undefined,
+        preferred_language: accountForm.preferred_language,
+        notification_method: accountForm.notification_method,
+        password: accountForm.password,
+      });
+      setStatusMessage('Account created');
+      onAuthenticated(session);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to create account');
+      setStatusMessage('');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-panel">
+        <div className="auth-brand">
+          <span>LR</span>
+          <div>
+            <strong>LRMIS</strong>
+            <p>Land Registration Management Information System</p>
+          </div>
+        </div>
+
+        <div className="auth-tabs" role="tablist" aria-label="Account access">
+          <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Sign in</button>
+          <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Create account</button>
+        </div>
+
+        {mode === 'login' ? (
+          <form className="auth-form" onSubmit={handleLogin}>
+            <label>Email<input type="email" value={loginForm.email} onChange={(event) => setLoginForm({ ...loginForm, email: event.target.value })} required /></label>
+            <label>Password<input type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} required /></label>
+            <button type="submit" disabled={loading}>Sign in</button>
+          </form>
+        ) : (
+          <form className="grid-form auth-form-grid" onSubmit={handleRegister}>
+            <label>Full name<input value={accountForm.full_name} onChange={(event) => setAccountForm({ ...accountForm, full_name: event.target.value })} required /></label>
+            <label>Applicant type<select value={accountForm.applicant_type} onChange={(event) => setAccountForm({ ...accountForm, applicant_type: event.target.value as ApplicantType })}>{applicantTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+            <label>National ID<input value={accountForm.national_id} onChange={(event) => setAccountForm({ ...accountForm, national_id: event.target.value })} /></label>
+            <label>Registration number<input value={accountForm.registration_number} onChange={(event) => setAccountForm({ ...accountForm, registration_number: event.target.value })} /></label>
+            <label>Email<input type="email" value={accountForm.email} onChange={(event) => setAccountForm({ ...accountForm, email: event.target.value })} required /></label>
+            <label>Phone<input value={accountForm.phone} onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value })} required /></label>
+            <label>City<input value={accountForm.city} onChange={(event) => setAccountForm({ ...accountForm, city: event.target.value })} required /></label>
+            <label>Zone ID<input value={accountForm.zone_id} onChange={(event) => setAccountForm({ ...accountForm, zone_id: event.target.value })} /></label>
+            <label>Preferred language<input value={accountForm.preferred_language} onChange={(event) => setAccountForm({ ...accountForm, preferred_language: event.target.value })} /></label>
+            <label>Notification method<select value={accountForm.notification_method} onChange={(event) => setAccountForm({ ...accountForm, notification_method: event.target.value as 'email' | 'sms' })}><option value="email">email</option><option value="sms">sms</option></select></label>
+            <label>Password<input type="password" minLength={8} value={accountForm.password} onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })} required /></label>
+            <label>Confirm password<input type="password" minLength={8} value={accountForm.confirm_password} onChange={(event) => setAccountForm({ ...accountForm, confirm_password: event.target.value })} required /></label>
+            <button type="submit" disabled={loading}>Create account</button>
+          </form>
+        )}
+
+        {statusMessage && <p className="status">{statusMessage}</p>}
+        {errorMessage && <p className="error">{errorMessage}</p>}
+      </section>
+    </main>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const activeLabel = useMemo(() => tabs.find((tab) => tab.key === activeTab)?.label ?? '', [activeTab]);
   const activeGroup = useMemo(() => tabs.find((tab) => tab.key === activeTab)?.group ?? '', [activeTab]);
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  const [authChecking, setAuthChecking] = useState(Boolean(getStoredAuthToken()));
 
   function isSideNavActive(item: { key: TabKey; label: string }) {
     if (item.label === 'Applicants') {
@@ -325,8 +456,51 @@ function App() {
     notes: '',
   });
 
+  function applyAuthenticatedSession(session: AuthSession) {
+    setAuthSession(session);
+    setApplicantForm((current) => ({
+      ...current,
+      full_name: session.applicant.full_name,
+      applicant_type: session.applicant.applicant_type,
+      national_id: session.applicant.national_id ?? '',
+      registration_number: session.applicant.registration_number ?? '',
+      email: session.applicant.email,
+      phone: session.applicant.phone,
+      city: session.applicant.city,
+      zone_id: session.applicant.zone_id ?? '',
+      preferred_language: session.applicant.preferred_language,
+      notification_method: session.applicant.notification_method,
+    }));
+    setApplicationForm((current) => ({ ...current, applicant_id: session.applicant.id }));
+    setLookupApplicantId(session.applicant.id);
+    setDocumentForm((current) => ({ ...current, uploaded_by_applicant_id: session.applicant.id }));
+    setCommentForm((current) => ({ ...current, applicant_id: session.applicant.id }));
+    setObjectionForm((current) => ({ ...current, applicant_id: session.applicant.id }));
+  }
+
+  useEffect(() => {
+    if (!getStoredAuthToken()) {
+      setAuthChecking(false);
+      return;
+    }
+
+    getCurrentAccount()
+      .then(applyAuthenticatedSession)
+      .catch(() => {
+        setStoredAuthToken('');
+        setAuthSession(null);
+      })
+      .finally(() => setAuthChecking(false));
+  }, []);
+
   async function handleApplicantSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (authSession) {
+      finishAction('Applicant profile', authSession.applicant, `Signed in as applicant: ${authSession.applicant.id}`);
+      return;
+    }
+
     startAction('Creating applicant...');
 
     try {
@@ -353,8 +527,9 @@ function App() {
     startAction('Submitting application...');
 
     try {
+      const applicantId = authSession?.applicant.id ?? applicationForm.applicant_id;
       const created = await createApplication({
-        applicant_id: applicationForm.applicant_id,
+        applicant_id: applicantId,
         application_type: applicationForm.application_type,
         parcel_number: applicationForm.parcel_number,
         block_number: applicationForm.block_number,
@@ -373,8 +548,9 @@ function App() {
     startAction('Loading applications...');
 
     try {
-      await getApplicant(lookupApplicantId);
-      const applications = await listApplications(lookupApplicantId);
+      const applicantId = authSession?.applicant.id ?? lookupApplicantId;
+      await getApplicant(applicantId);
+      const applications = await listApplications(applicantId);
       finishAction('Applications', applications, `Loaded ${applications.length} applications`);
     } catch (error) {
       failAction(error, 'Unable to load applications');
@@ -418,7 +594,7 @@ function App() {
       const document = await addDocument(documentForm.application_id, {
         document_type: documentForm.document_type,
         filename: documentForm.filename,
-        uploaded_by_applicant_id: documentForm.uploaded_by_applicant_id,
+        uploaded_by_applicant_id: authSession?.applicant.id ?? documentForm.uploaded_by_applicant_id,
       });
       finishAction('Document record', document, `Document metadata added: ${document.id}`);
     } catch (error) {
@@ -432,7 +608,7 @@ function App() {
 
     try {
       const comment = await addComment(commentForm.application_id, {
-        applicant_id: commentForm.applicant_id,
+        applicant_id: authSession?.applicant.id ?? commentForm.applicant_id,
         comment_text: commentForm.comment_text,
       });
       finishAction('Comment record', comment, `Comment saved: ${comment.id}`);
@@ -447,7 +623,7 @@ function App() {
 
     try {
       const objection = await addObjection(objectionForm.application_id, {
-        applicant_id: objectionForm.applicant_id,
+        applicant_id: authSession?.applicant.id ?? objectionForm.applicant_id,
         reason: objectionForm.reason,
         supporting_document_filename: objectionForm.supporting_document_filename || undefined,
       });
@@ -602,6 +778,35 @@ function App() {
     }
   }
 
+  async function handleSignOut() {
+    await logoutAccount();
+    setAuthSession(null);
+    setActiveTab('dashboard');
+    setStatusMessage('');
+    setErrorMessage('');
+    setResult(null);
+  }
+
+  if (authChecking) {
+    return (
+      <main className="auth-page">
+        <section className="auth-panel">
+          <div className="auth-brand">
+            <span>LR</span>
+            <div>
+              <strong>LRMIS</strong>
+              <p>Checking your session...</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (!authSession) {
+    return <AuthScreen onAuthenticated={applyAuthenticatedSession} />;
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -623,8 +828,12 @@ function App() {
         <header className="topbar">
           <strong>Land Registration Management Information System</strong>
           <div className="user-menu">
-            <span>LR</span>
-            LRMIS
+            <span>{authSession.applicant.full_name.slice(0, 2).toUpperCase()}</span>
+            <div>
+              <strong>{authSession.applicant.full_name}</strong>
+              <small>{authSession.account.email}</small>
+            </div>
+            <button type="button" className="ghost-button" onClick={handleSignOut}>Sign out</button>
           </div>
         </header>
 
@@ -643,7 +852,8 @@ function App() {
 
       {activeTab === 'create-applicant' && (
         <section className="card">
-          <h2>Create Applicant</h2>
+          <h2>Applicant Profile</h2>
+          <p>This profile is connected to the signed-in account.</p>
           <form className="grid-form" onSubmit={handleApplicantSubmit}>
             <label>Full name<input value={applicantForm.full_name} onChange={(event) => setApplicantForm({ ...applicantForm, full_name: event.target.value })} required /></label>
             <label>Applicant type<select value={applicantForm.applicant_type} onChange={(event) => setApplicantForm({ ...applicantForm, applicant_type: event.target.value as ApplicantType })}>{applicantTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
@@ -655,7 +865,7 @@ function App() {
             <label>Zone ID<input value={applicantForm.zone_id} onChange={(event) => setApplicantForm({ ...applicantForm, zone_id: event.target.value })} /></label>
             <label>Preferred language<input value={applicantForm.preferred_language} onChange={(event) => setApplicantForm({ ...applicantForm, preferred_language: event.target.value })} /></label>
             <label>Notification method<select value={applicantForm.notification_method} onChange={(event) => setApplicantForm({ ...applicantForm, notification_method: event.target.value as 'email' | 'sms' })}><option value="email">email</option><option value="sms">sms</option></select></label>
-            <button type="submit" disabled={loading}>Create applicant</button>
+            <button type="submit" disabled={loading}>{authSession ? 'Show profile' : 'Create applicant'}</button>
           </form>
         </section>
       )}
@@ -664,7 +874,7 @@ function App() {
         <section className="card">
           <h2>Submit Application</h2>
           <form className="grid-form" onSubmit={handleApplicationSubmit}>
-            <label>Applicant ID<input value={applicationForm.applicant_id} onChange={(event) => setApplicationForm({ ...applicationForm, applicant_id: event.target.value })} required /></label>
+            <label>Applicant ID<input value={applicationForm.applicant_id} onChange={(event) => setApplicationForm({ ...applicationForm, applicant_id: event.target.value })} disabled={Boolean(authSession)} required /></label>
             <label>Application type<select value={applicationForm.application_type} onChange={(event) => setApplicationForm({ ...applicationForm, application_type: event.target.value as ApplicationType })}>{applicationTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
             <label>Parcel number<input value={applicationForm.parcel_number} onChange={(event) => setApplicationForm({ ...applicationForm, parcel_number: event.target.value })} required /></label>
             <label>Block number<input value={applicationForm.block_number} onChange={(event) => setApplicationForm({ ...applicationForm, block_number: event.target.value })} required /></label>
@@ -693,7 +903,7 @@ function App() {
         <section className="card">
           <h2>My Applications</h2>
           <form className="inline-form" onSubmit={handleApplicationsLookup}>
-            <label>Applicant ID<input value={lookupApplicantId} onChange={(event) => setLookupApplicantId(event.target.value)} required /></label>
+            <label>Applicant ID<input value={lookupApplicantId} onChange={(event) => setLookupApplicantId(event.target.value)} disabled={Boolean(authSession)} required /></label>
             <button type="submit" disabled={loading}>Load applications</button>
           </form>
         </section>
@@ -716,7 +926,7 @@ function App() {
             <label>Application ID<input value={documentForm.application_id} onChange={(event) => setDocumentForm({ ...documentForm, application_id: event.target.value })} required /></label>
             <label>Document type<input value={documentForm.document_type} onChange={(event) => setDocumentForm({ ...documentForm, document_type: event.target.value })} required /></label>
             <label>Filename<input value={documentForm.filename} onChange={(event) => setDocumentForm({ ...documentForm, filename: event.target.value })} required /></label>
-            <label>Uploaded by applicant ID<input value={documentForm.uploaded_by_applicant_id} onChange={(event) => setDocumentForm({ ...documentForm, uploaded_by_applicant_id: event.target.value })} required /></label>
+            <label>Uploaded by applicant ID<input value={documentForm.uploaded_by_applicant_id} onChange={(event) => setDocumentForm({ ...documentForm, uploaded_by_applicant_id: event.target.value })} disabled={Boolean(authSession)} required /></label>
             <button type="submit" disabled={loading}>Save document metadata</button>
           </form>
         </section>
@@ -727,7 +937,7 @@ function App() {
           <h2>Add Comment</h2>
           <form className="grid-form" onSubmit={handleCommentSubmit}>
             <label>Application ID<input value={commentForm.application_id} onChange={(event) => setCommentForm({ ...commentForm, application_id: event.target.value })} required /></label>
-            <label>Applicant ID<input value={commentForm.applicant_id} onChange={(event) => setCommentForm({ ...commentForm, applicant_id: event.target.value })} required /></label>
+            <label>Applicant ID<input value={commentForm.applicant_id} onChange={(event) => setCommentForm({ ...commentForm, applicant_id: event.target.value })} disabled={Boolean(authSession)} required /></label>
             <label className="full-width">Comment text<textarea value={commentForm.comment_text} onChange={(event) => setCommentForm({ ...commentForm, comment_text: event.target.value })} rows={4} required /></label>
             <button type="submit" disabled={loading}>Save comment</button>
           </form>
@@ -739,7 +949,7 @@ function App() {
           <h2>Submit Objection</h2>
           <form className="grid-form" onSubmit={handleObjectionSubmit}>
             <label>Application ID<input value={objectionForm.application_id} onChange={(event) => setObjectionForm({ ...objectionForm, application_id: event.target.value })} required /></label>
-            <label>Applicant ID<input value={objectionForm.applicant_id} onChange={(event) => setObjectionForm({ ...objectionForm, applicant_id: event.target.value })} required /></label>
+            <label>Applicant ID<input value={objectionForm.applicant_id} onChange={(event) => setObjectionForm({ ...objectionForm, applicant_id: event.target.value })} disabled={Boolean(authSession)} required /></label>
             <label className="full-width">Reason<textarea value={objectionForm.reason} onChange={(event) => setObjectionForm({ ...objectionForm, reason: event.target.value })} rows={4} required /></label>
             <label>Supporting document filename<input value={objectionForm.supporting_document_filename} onChange={(event) => setObjectionForm({ ...objectionForm, supporting_document_filename: event.target.value })} /></label>
             <button type="submit" disabled={loading}>Submit objection</button>
